@@ -307,45 +307,41 @@
         // --- Navigation and Routing ---
 
         /**
-         * Navigates using the new clean URL query parameters (?view=...&nav=... or ?view=...&id=...)
+         * Navigates using the new clean URL query parameters.
          * Uses '|' as a path separator in the URL query parameter to avoid '%2F' encoding.
-         * @param {string} route - Either a folder path (e.g., '/your/folder/path/') or a file ID prefix (e.g., 'file/myFileId')
-         * @param {boolean} replace - Use replaceState instead of pushState
+         * * @param {string} route - Either a folder path (e.g., '/your/folder/path/') or a file ID prefix (e.g., 'file/myFileId').
+         * @param {boolean} replace - Use replaceState instead of pushState.
          */
         const navigate = (route, replace = false) => {
-            let search = '';
-            
-            if (route.startsWith('file/')) {
-                // File Viewer Route: route = 'file/fileId'
+            let newUrl = '';
+
+            if (route === '/') {
+                // 1. User wants to go to the clean root path (e.g., just /)
+                // This clears all search parameters from the URL.
+                newUrl = window.location.pathname; 
+            } else if (route.startsWith('file/')) {
+                // 2. User wants to view a file
                 const fileId = route.substring(5);
-                // Use 'view=file' and 'id'
                 const params = new URLSearchParams({ view: 'file', id: fileId });
-                search = '?' + params.toString();
+                newUrl = '?' + params.toString();
             } else {
-                // Folder Manager Route: route = '/path/to/folder/'
+                // 3. User wants to navigate to a subfolder
                 let path = route;
                 
-                // 1. Normalize path to internal representation
-                if (path === '/') {
-                    path = '/';
-                } else {
-                    path = '/' + path.split('/').filter(s => s).join('/') + '/';
-                }
+                // Normalize path (guarantee leading and trailing slash)
+                path = '/' + path.split('/').filter(s => s).join('/') + '/';
                 
-                // 2. Prepare path for URL parameter: remove leading/trailing slashes and use '|' separator
-                // This ensures we have a clean string like 'segment1|segment2'
-                let pathParam = path.substring(1, path.length - 1); // Removes first and last slash
-                pathParam = pathParam.replace(/\//g, '|'); // Replace internal slashes with pipes
+                // Prepare path for URL parameter: replace internal slashes with pipes
+                let pathParam = path.substring(1, path.length - 1).replace(/\//g, '|');
                 
-                // Use 'view=folder' and 'nav'
                 const params = new URLSearchParams({ view: 'folder', nav: pathParam });
-                search = '?' + params.toString();
+                newUrl = '?' + params.toString();
             }
 
             if (replace) {
-                window.history.replaceState(null, '', search);
+                window.history.replaceState(null, '', newUrl);
             } else {
-                window.history.pushState(null, '', search);
+                window.history.pushState(null, '', newUrl);
             }
             handleRoute();
         };
@@ -353,10 +349,11 @@
 
         /**
          * Parses the URL query parameters, translating '|' back to '/' for internal use.
+         * If no query parameters are present, it defaults to the root folder.
          */
         const getRouteParams = () => {
             const params = new URLSearchParams(window.location.search);
-            const view = params.get('view'); // Use 'view'
+            const view = params.get('view'); 
 
             if (view === 'file') {
                 const fileId = params.get('id');
@@ -366,7 +363,7 @@
             }
             
             // Default to 'fileManager' (folder view)
-            let pathParam = params.get('nav'); // Use 'nav'
+            let pathParam = params.get('nav'); 
             let path = '/';
 
             if (pathParam && pathParam.length > 0) {
@@ -412,7 +409,8 @@
             const rootLink = document.createElement('a');
             rootLink.className = 'text-indigo-600 hover:text-indigo-800 cursor-pointer';
             rootLink.textContent = 'Vault';
-            rootLink.onclick = () => navigate('/');
+            // Use the clean navigate call for the root link
+            rootLink.onclick = () => navigate('/'); 
             breadcrumbsEl.appendChild(rootLink);
             
             let cumulativePath = '/';

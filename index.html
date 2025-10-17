@@ -251,7 +251,7 @@
         let currentUserId = null;
         let currentPath = '/'; // Root folder path
 
-        // --- Utility Functions ---
+        // --- Utility Functions (showMessage, toggleLoading, base64ToBlob, stringToBase64) ---
 
         const showMessage = (message, type = 'info') => {
             const box = document.getElementById('messageBox');
@@ -289,9 +289,6 @@
             }
         };
         
-        /**
-         * Converts Base64 data string back into a Blob object.
-         */
         const base64ToBlob = (base64Data, fileType) => {
             const byteCharacters = atob(base64Data);
             const byteNumbers = new Array(byteCharacters.length);
@@ -302,36 +299,37 @@
             return new Blob([byteArray], { type: fileType });
         };
 
-        /**
-         * Converts a string to Base64 (used for saving edited text files).
-         */
         const stringToBase64 = (str) => {
-            // Use TextEncoder to handle multi-byte characters correctly before btoa
             const binaryString = String.fromCharCode.apply(null, new Uint8Array(new TextEncoder().encode(str)));
             return btoa(binaryString);
         };
 
         // --- Navigation and Routing ---
 
-        const internalPathToNavParam = (path) => {
-            // Ensures path starts and ends with / for consistency, then swaps / for +
-            const normalized = path === '/' ? '/' : (path.startsWith('/') ? path : '/' + path).replace(/\/\/+/g, '/');
-            return normalized.replaceAll('/', '+');
-        };
-
-        const navParamToInternalPath = (navParam) => {
-            // Swaps + for /
-            let path = navParam.replaceAll('+', '/');
-            // Normalize path to always end with a slash, unless it's just '/'
-            if (path !== '/' && !path.endsWith('/')) {
-                path += '/';
+        /**
+         * Navigates using standard URL query parameters (?type=...&path=... or ?type=...&id=...)
+         * @param {string} route - Either a folder path (e.g., '/') or a file ID prefix (e.g., 'file/myFileId')
+         * @param {boolean} replace - Use replaceState instead of pushState
+         */
+        const navigate = (route, replace = false) => {
+            let search = '';
+            
+            if (route.startsWith('file/')) {
+                // File Viewer Route: route = 'file/fileId'
+                const fileId = route.substring(5);
+                const params = new URLSearchParams({ type: 'file', id: fileId });
+                search = '?' + params.toString();
+            } else {
+                // Folder Manager Route: route = '/path/to/folder/'
+                let path = route;
+                // Normalize path to always end with a slash, unless it's just '/'
+                if (path !== '/' && !path.endsWith('/')) {
+                    path += '/';
+                }
+                const params = new URLSearchParams({ type: 'folder', path: path });
+                search = '?' + params.toString();
             }
-            return path;
-        };
-        
-        const navigate = (path, replace = false) => {
-            const navParam = internalPathToNavParam(path);
-            const search = `?nav=${encodeURIComponent(navParam)}`;
+
             if (replace) {
                 window.history.replaceState(null, '', search);
             } else {
@@ -341,19 +339,23 @@
         };
         window.navigate = navigate;
 
+        /**
+         * Parses the URL query parameters to determine the current view and parameters.
+         */
         const getRouteParams = () => {
             const params = new URLSearchParams(window.location.search);
-            const navParam = params.get('nav') || '+';
-            const internalPath = navParamToInternalPath(navParam);
-            const pathSegments = internalPath.split('/').filter(s => s);
+            const type = params.get('type');
 
-            // Check for file viewer format: +file+fileId+
-            if (pathSegments.length === 2 && pathSegments[0] === 'file') {
-                 // The actual fileId is the second segment
-                return { name: 'fileViewer', fileId: pathSegments[1] };
+            if (type === 'file') {
+                const fileId = params.get('id');
+                if (fileId) {
+                    return { name: 'fileViewer', fileId: fileId };
+                }
             }
             
-            return { name: 'fileManager', path: internalPath };
+            // Default to 'fileManager' (folder view)
+            const path = params.get('path') || '/';
+            return { name: 'fileManager', path: path };
         };
 
         const handleRoute = () => {
@@ -418,8 +420,8 @@
             });
         };
         
-        // --- Authentication Logic (omitted for brevity) ---
-        // (Authentication logic remains unchanged)
+        // --- Authentication Logic (remains unchanged) ---
+        
         document.getElementById('toggleAuthMode').addEventListener('click', () => {
             isSignUpMode = !isSignUpMode;
             document.getElementById('authText').textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
@@ -694,18 +696,11 @@
                     showMessage(`Folder '${folderName}' was already empty.`, 'info');
                 }
                 
-                // 2. Add all contained files' metadata and chunks to the batch
+                // 2. Add all contained files' metadata to the batch
                 docsToDelete.docs.forEach(docSnapshot => {
                     const id = docSnapshot.id;
-                    // Delete metadata doc
+                    // Delete metadata doc. (Chunks must be handled by Firestore security rules or client iteration)
                     batch.delete(doc(metadataCollection, id)); 
-                    
-                    // Note: We cannot batch delete collections (chunks), so we must rely on 
-                    // a delete rule (if applicable) or client-side iteration for *massive* folders.
-                    // For now, we rely on the client only deleting the metadata. Firestore rules 
-                    // should clean up the subcollection, but since we cannot guarantee rules
-                    // are set up, we'll iterate and delete the chunks immediately only for
-                    // the target placeholder document if it exists.
                 });
                 
                 // 3. Delete the folder's placeholder document (if it exists)
@@ -720,7 +715,10 @@
                 
                 // 5. Navigate back to the parent folder
                 if (currentPath !== '/') {
-                    const parentPath = currentPath.split('/').slice(0, -2).join('/') + '/';
+                    // Extract parent path: split by '/', filter empty strings, join back, add trailing '/'
+                    const segments = currentPath.split('/').filter(s => s);
+                    segments.pop(); // Remove current folder name
+                    const parentPath = segments.length === 0 ? '/' : '/' + segments.join('/') + '/';
                     navigate(parentPath);
                 } else {
                     fetchFiles();
@@ -748,6 +746,7 @@
                 return;
             }
             
+            // Old and new full path segments (must include currentPath)
             const oldPathSegment = `${currentPath}${oldName}/`;
             const newPathSegment = `${currentPath}${cleanNewName}/`;
             
@@ -874,14 +873,16 @@
             // Add synthetic folders (derived from file paths)
             filesToDisplay.forEach(file => {
                  // Check if the file is in an immediate subfolder
-                const remainingPath = file.path.substring(currentPath.length);
-                const segments = remainingPath.split('/').filter(s => s); 
-                
-                if (segments.length >= 1) {
-                    const folderName = segments[0];
-                    if (!folders.has(folderName)) {
-                         // Only add if no placeholder exists yet, and use a null ID
-                         folders.set(folderName, { name: folderName, id: null });
+                if (file.path.startsWith(currentPath) && file.path.length > currentPath.length) {
+                    const remainingPath = file.path.substring(currentPath.length);
+                    const segments = remainingPath.split('/').filter(s => s); 
+                    
+                    if (segments.length >= 1) {
+                        const folderName = segments[0];
+                        if (!folders.has(folderName)) {
+                             // Only add if no placeholder exists yet, and use a null ID
+                             folders.set(folderName, { name: folderName, id: null });
+                        }
                     }
                 }
             });
@@ -910,10 +911,10 @@
                     <div class="flex items-center space-x-2">
                          <p class="text-sm text-gray-500">Folder</p>
                          <div class="flex space-x-2">
-                             <button title="Rename Folder" onclick="event.stopPropagation(); showRenameModal('${folder.id}', '${folder.name}');" class="text-indigo-600 hover:text-indigo-800 p-1 rounded-full hover:bg-indigo-100 transition">
+                             <button title="Rename Folder" onclick="event.stopPropagation(); showRenameModal('${folder.id || ''}', '${folder.name}');" class="text-indigo-600 hover:text-indigo-800 p-1 rounded-full hover:bg-indigo-100 transition">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
-                            <button title="Delete Folder" onclick="event.stopPropagation(); handleFolderDelete('${folder.id}', '${folder.name}');" class="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition">
+                            <button title="Delete Folder" onclick="event.stopPropagation(); handleFolderDelete('${folder.id || ''}', '${folder.name}');" class="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             </button>
                          </div>
@@ -933,11 +934,10 @@
             });
             
             filesDirectlyInPath.forEach(file => {
-                const uploadedDate = file.uploadedAt?.toDate?.()?.toLocaleDateString() || 'Pending...';
-                const fileName = file.fileName || 'Untitled File';
                 const fileSize = file.fileSize || 0;
                 const fileSizeMB = (fileSize / 1024 / 1024).toFixed(2);
                 const fileType = file.fileType || '';
+                const fileName = file.fileName || 'Untitled File';
 
                 let iconHtml = '';
                 if (file.firstChunk) {
@@ -1114,7 +1114,7 @@
             }
 
             try {
-                // 1. Delete all chunks (Using batch for metadata, but client delete for chunks is needed if we can't guarantee FS rules)
+                // 1. Delete all chunks
                 const chunksCollection = getFileChunksCollection(currentUserId, fileId);
                 const q = query(chunksCollection);
                 const chunkDocs = await getDocs(q);
@@ -1198,8 +1198,8 @@
                     if (file.path.startsWith(currentPath) && file.path.length > currentPath.length) {
                         const remainingPath = file.path.substring(currentPath.length);
                         // Check if the remainder path (excluding the trailing slash) contains no more slashes
-                        const firstSlashIndex = remainingPath.indexOf('/');
-                        if (firstSlashIndex === remainingPath.length - 1 && remainingPath.length > 1) {
+                        const segments = remainingPath.split('/').filter(s => s); 
+                        if (segments.length === 1) { // Only one segment means it's an immediate subfolder
                             return true; 
                         }
                     }

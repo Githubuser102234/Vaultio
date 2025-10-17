@@ -160,7 +160,7 @@
 
         // --- Configuration and Initialization ---
 
-        // Using user-provided config (Note: DO NOT use Canvas environment variables like __app_id)
+        // Using user-provided config for GitHub Pages deployment
         const firebaseConfig = {
             apiKey: "AIzaSyAY_xxThXsNlAf_HGQFXBk1dGa6rtexbYM",
             authDomain: "vaultio-8bbdb.firebaseapp.com",
@@ -176,7 +176,7 @@
 
         // --- Constants and Global State ---
 
-        // Maximum size for Base64 chunk to stay well under the 1MB Firestore limit (500KB)
+        // Maximum size for Base64 chunk (500KB)
         const CHUNK_SIZE_CHARS = 500 * 1024;
         let isSignUpMode = false;
         let currentUserId = null;
@@ -194,7 +194,7 @@
                                  type === 'success' ? 'bg-green-500 text-white' :
                                  'bg-blue-500 text-white';
 
-            // Log error to console for debugging, but show user-friendly message
+            // Log error to console for debugging
             if (type === 'error') {
                 console.error("UI Error Message:", message);
             }
@@ -479,24 +479,34 @@
             fileListEl.innerHTML = '';
             document.getElementById('fileListPlaceholder').style.display = files.length === 0 ? 'block' : 'none';
 
-            // Use optional chaining for safe access to toDate and getTime for sorting
+            // CRITICAL FIX: Use optional chaining for safe access to toDate and getTime for sorting
             files.sort((a, b) => {
+                // Get time in milliseconds, defaulting to 0 if the timestamp is null/pending
                 const timeA = a.uploadedAt?.toDate?.()?.getTime() || 0;
                 const timeB = b.uploadedAt?.toDate?.()?.getTime() || 0;
                 return timeB - timeA; // Descending (newest first)
             });
 
             files.forEach(file => {
-                // Use optional chaining for safe date rendering
+                // Use optional chaining for safe date rendering, defaulting to a placeholder string
                 const uploadedDate = file.uploadedAt?.toDate?.()?.toLocaleDateString() || 'Pending...';
+                
+                // Use defensive defaults for all other properties to prevent TypeErrors in calculation/display
+                const fileName = file.fileName || 'Untitled File';
+                const fileSize = file.fileSize || 0;
+                const totalChunks = file.totalChunks || 0;
+                
+                // Safe size calculation
+                const fileSizeMB = (fileSize / 1024 / 1024).toFixed(2);
+
 
                 const li = document.createElement('li');
                 li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg';
                 li.innerHTML = `
                     <div>
-                        <p class="font-semibold text-gray-800 break-words">${file.fileName}</p>
+                        <p class="font-semibold text-gray-800 break-words">${fileName}</p>
                         <p class="text-sm text-gray-500">
-                            ${(file.fileSize / 1024 / 1024).toFixed(2)} MB | ${file.totalChunks} Chunks | ${uploadedDate}
+                            ${fileSizeMB} MB | ${totalChunks} Chunks | ${uploadedDate}
                         </p>
                     </div>
                     <div class="space-x-2 flex items-center">
@@ -547,9 +557,8 @@
         };
 
         const handleFileDelete = async (fileId) => {
-            // NOTE: Replacing window.confirm() with showMessage() to comply with environment restrictions.
-            // In a real app, you would use a custom modal for confirmation.
-            showMessage('Deleting file and chunks... (No confirmation dialog used due to environment constraints.)', 'info');
+            // NOTE: Using a simple JS prompt since window.confirm() is disallowed.
+            if (!window.confirm("Are you sure you want to delete this file and all its chunks?")) return;
 
             try {
                 // 1. Delete all chunks
@@ -589,8 +598,9 @@
                 }));
                 renderFiles(files);
             } catch (error) {
+                // Critical update: Log the detailed message to help diagnose the true TypeError source
                 console.error("Fetch Files Error:", error);
-                showMessage('Could not load files. Check console for details.', 'error');
+                showMessage(`Could not load files. Error: ${error.message || 'Unknown TypeError'}. Please check console.`, 'error');
             }
         };
 

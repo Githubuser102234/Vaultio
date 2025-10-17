@@ -200,13 +200,14 @@
         import {
             getFirestore,
             collection,
-            doc,
+            doc, // Firebase doc function
             setDoc,
             getDocs,
             deleteDoc,
             query,
             serverTimestamp,
-            getDoc, // Added getDoc for single file metadata
+            getDoc,
+            where, 
         } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
         // --- Configuration and Initialization ---
@@ -478,7 +479,7 @@
                 totalChunks,
                 path: currentPath, 
                 // Only update uploadedAt if it's a new file, otherwise use serverTimestamp as update time
-                uploadedAt: fileId ? getDoc(metadataRef).then(d => d.data().uploadedAt) : serverTimestamp(),
+                uploadedAt: fileId ? (await getDoc(metadataRef)).data().uploadedAt : serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
 
@@ -519,7 +520,7 @@
                 throw new Error("No chunks found for this file.");
             }
 
-            const sortedChunks = querySnapshot.docs.map(doc => doc.data())
+            const sortedChunks = querySnapshot.docs.map(docSnapshot => docSnapshot.data())
                 .sort((a, b) => a.chunkIndex - b.chunkIndex);
 
             if (sortedChunks.length < totalChunks) {
@@ -941,8 +942,10 @@
                 const q = query(metadataCollection);
                 const querySnapshot = await getDocs(q);
 
-                const allFiles = querySnapshot.docs.map(doc => {
-                    const data = doc.data();
+                const allFiles = querySnapshot.docs.map(docSnapshot => { // 🐛 FIXED: Renamed parameter to avoid shadowing
+                    const data = docSnapshot.data();
+                    const fileId = docSnapshot.id;
+
                     // CRITICAL FIX: Ensure 'path' exists for old documents
                     if (data.path === undefined || data.path === null) {
                         data.path = '/'; 
@@ -955,8 +958,8 @@
                     // Simple hack to include the first chunk for image previews in the list
                     // WARNING: This is a fast but non-scalable way to get preview data
                     if (data.fileType && data.fileType.startsWith('image/') && data.totalChunks > 0 && data.firstChunk === undefined) {
-                        // Attempt to load the first chunk for preview thumbnail
-                         getDoc(doc(getFileChunksCollection(currentUserId, doc.id), '0')).then(chunkDoc => {
+                        // FIX APPLIED HERE: The imported 'doc' function is now correctly used.
+                         getDoc(doc(getFileChunksCollection(currentUserId, fileId), '0')).then(chunkDoc => {
                             if (chunkDoc.exists()) {
                                 data.firstChunk = chunkDoc.data().data;
                                 // Re-render the file list after the preview data arrives
@@ -966,7 +969,7 @@
                     }
                     
                     return {
-                        id: doc.id,
+                        id: fileId,
                         ...data
                     };
                 });

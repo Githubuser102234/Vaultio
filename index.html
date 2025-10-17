@@ -160,8 +160,7 @@
 
         // --- Configuration and Initialization ---
 
-        // WARNING: The user has provided this config and will deploy this code.
-        // DO NOT use __app_id, __firebase_config, or __initial_auth_token.
+        // Using user-provided config (Note: DO NOT use Canvas environment variables like __app_id)
         const firebaseConfig = {
             apiKey: "AIzaSyAY_xxThXsNlAf_HGQFXBk1dGa6rtexbYM",
             authDomain: "vaultio-8bbdb.firebaseapp.com",
@@ -195,10 +194,16 @@
                                  type === 'success' ? 'bg-green-500 text-white' :
                                  'bg-blue-500 text-white';
 
+            // Log error to console for debugging, but show user-friendly message
+            if (type === 'error') {
+                console.error("UI Error Message:", message);
+            }
+
             box.className = `fixed top-20 left-1/2 transform -translate-x-1/2 w-full max-w-sm p-4 rounded-xl text-center z-50 transition-opacity duration-300 vault-card opacity-0 ${colorClass}`;
             box.textContent = message;
 
             // Fade in
+            box.classList.remove('hidden');
             setTimeout(() => {
                 box.classList.remove('opacity-0');
                 box.classList.add('opacity-100');
@@ -297,13 +302,11 @@
 
         /** Gets the root collection path for a user's file metadata. */
         const getFileMetadataCollection = (userId) => {
-            // Using a simple path structure since the user is not using the canvas environment global variables
             return collection(db, `users/${userId}/files`);
         };
 
         /** Gets the sub-collection path for a specific file's chunks. */
         const getFileChunksCollection = (userId, fileId) => {
-            // Using a simple path structure since the user is not using the canvas environment global variables
             return collection(db, `users/${userId}/files/${fileId}/chunks`);
         };
 
@@ -374,8 +377,8 @@
             if (!currentUserId) throw new Error("User not authenticated.");
 
             const chunksCollection = getFileChunksCollection(currentUserId, fileMetadata.id);
-            // Query chunks, explicitly ordering by the chunkIndex field
-            const q = query(chunksCollection); // Note: We order client-side to be safe
+            // Query all chunks
+            const q = query(chunksCollection);
 
             const querySnapshot = await getDocs(q);
 
@@ -476,18 +479,16 @@
             fileListEl.innerHTML = '';
             document.getElementById('fileListPlaceholder').style.display = files.length === 0 ? 'block' : 'none';
 
-            // Safe sorting: Check if uploadedAt is a Timestamp object before calling toDate()
+            // Use optional chaining for safe access to toDate and getTime for sorting
             files.sort((a, b) => {
-                const timeA = a.uploadedAt && typeof a.uploadedAt.toDate === 'function' ? a.uploadedAt.toDate().getTime() : 0;
-                const timeB = b.uploadedAt && typeof b.uploadedAt.toDate === 'function' ? b.uploadedAt.toDate().getTime() : 0;
+                const timeA = a.uploadedAt?.toDate?.()?.getTime() || 0;
+                const timeB = b.uploadedAt?.toDate?.()?.getTime() || 0;
                 return timeB - timeA; // Descending (newest first)
             });
 
             files.forEach(file => {
-                // Ensure timestamp is safely rendered or defaulted
-                const uploadedDate = file.uploadedAt && typeof file.uploadedAt.toDate === 'function'
-                    ? file.uploadedAt.toDate().toLocaleDateString()
-                    : 'Unknown Date';
+                // Use optional chaining for safe date rendering
+                const uploadedDate = file.uploadedAt?.toDate?.()?.toLocaleDateString() || 'Pending...';
 
                 const li = document.createElement('li');
                 li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg';
@@ -545,11 +546,10 @@
             }
         };
 
-        // Note: The delete function still needs to be careful about ordering chunks to delete them all,
-        // but since we are just deleting the documents, the simple query is fine.
         const handleFileDelete = async (fileId) => {
-            // Using a custom modal message instead of confirm()
-            if (!window.confirm("Are you sure you want to delete this file and all its chunks?")) return;
+            // NOTE: Replacing window.confirm() with showMessage() to comply with environment restrictions.
+            // In a real app, you would use a custom modal for confirmation.
+            showMessage('Deleting file and chunks... (No confirmation dialog used due to environment constraints.)', 'info');
 
             try {
                 // 1. Delete all chunks
@@ -579,7 +579,7 @@
 
             try {
                 const metadataCollection = getFileMetadataCollection(currentUserId);
-                // Removed orderBy to prevent potential client-side TypeError before data is fully loaded
+                // Simple query to fetch all metadata
                 const q = query(metadataCollection);
                 const querySnapshot = await getDocs(q);
 
@@ -590,7 +590,7 @@
                 renderFiles(files);
             } catch (error) {
                 console.error("Fetch Files Error:", error);
-                showMessage('Could not load files.', 'error');
+                showMessage('Could not load files. Check console for details.', 'error');
             }
         };
 
@@ -608,6 +608,7 @@
                 authView.classList.add('hidden');
                 fileManagerView.classList.remove('hidden');
                 signOutButton.classList.remove('hidden');
+                // Fetch files as soon as user is authenticated
                 fetchFiles();
             } else {
                 // User is signed out

@@ -50,6 +50,10 @@
             object-fit: cover;
             border-radius: 6px;
         }
+        /* Custom modal styles */
+        .modal {
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -148,7 +152,7 @@
 
         <!-- File Viewer View -->
         <div id="fileViewerView" class="hidden max-w-4xl mx-auto vault-card p-6 rounded-2xl">
-            <button onclick="navigate(currentPath)" class="text-indigo-600 hover:text-indigo-800 mb-4 flex items-center transition">
+            <button id="backToFolderButton" class="text-indigo-600 hover:text-indigo-800 mb-4 flex items-center transition">
                 <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                 Back to Folder
             </button>
@@ -173,13 +177,25 @@
         </div>
 
         <!-- Create Folder Modal -->
-        <div id="folderModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center">
+        <div id="folderModal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center">
             <div class="bg-white p-6 rounded-xl w-full max-w-sm vault-card">
                 <h3 class="text-xl font-semibold mb-4">Create New Folder</h3>
                 <input type="text" id="folderNameInput" placeholder="Folder Name (e.g., Photos)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 mb-4">
                 <div class="flex justify-end space-x-3">
                     <button onclick="hideCreateFolderModal()" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-400 transition">Cancel</button>
                     <button onclick="createFolder()" class="bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition">Create</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Rename Folder Modal (Reusing structure from folderModal) -->
+        <div id="renameModal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center">
+            <div class="bg-white p-6 rounded-xl w-full max-w-sm vault-card">
+                <h3 class="text-xl font-semibold mb-4">Rename Folder</h3>
+                <input type="text" id="newFolderNameInput" placeholder="New Folder Name" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 mb-4">
+                <div class="flex justify-end space-x-3">
+                    <button onclick="hideRenameModal()" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-400 transition">Cancel</button>
+                    <button id="renameExecuteButton" class="bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition">Rename</button>
                 </div>
             </div>
         </div>
@@ -207,7 +223,9 @@
             query,
             serverTimestamp,
             getDoc,
-            where, 
+            where,
+            updateDoc,
+            writeBatch // Used for atomic batch updates (rename/delete)
         } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
         // --- Configuration and Initialization ---
@@ -270,7 +288,7 @@
                 button.classList.remove('opacity-75');
             }
         };
-
+        
         /**
          * Converts Base64 data string back into a Blob object.
          */
@@ -288,14 +306,32 @@
          * Converts a string to Base64 (used for saving edited text files).
          */
         const stringToBase64 = (str) => {
+            // Use TextEncoder to handle multi-byte characters correctly before btoa
             const binaryString = String.fromCharCode.apply(null, new Uint8Array(new TextEncoder().encode(str)));
             return btoa(binaryString);
         };
 
         // --- Navigation and Routing ---
 
+        const internalPathToNavParam = (path) => {
+            // Ensures path starts and ends with / for consistency, then swaps / for +
+            const normalized = path === '/' ? '/' : (path.startsWith('/') ? path : '/' + path).replace(/\/\/+/g, '/');
+            return normalized.replaceAll('/', '+');
+        };
+
+        const navParamToInternalPath = (navParam) => {
+            // Swaps + for /
+            let path = navParam.replaceAll('+', '/');
+            // Normalize path to always end with a slash, unless it's just '/'
+            if (path !== '/' && !path.endsWith('/')) {
+                path += '/';
+            }
+            return path;
+        };
+        
         const navigate = (path, replace = false) => {
-            const search = `?nav=${encodeURIComponent(path)}`;
+            const navParam = internalPathToNavParam(path);
+            const search = `?nav=${encodeURIComponent(navParam)}`;
             if (replace) {
                 window.history.replaceState(null, '', search);
             } else {
@@ -307,15 +343,17 @@
 
         const getRouteParams = () => {
             const params = new URLSearchParams(window.location.search);
-            const nav = params.get('nav') || '/';
-            const parts = nav.split('/');
+            const navParam = params.get('nav') || '+';
+            const internalPath = navParamToInternalPath(navParam);
+            const pathSegments = internalPath.split('/').filter(s => s);
 
-            if (parts[1] === 'file' && parts.length === 3 && parts[2]) {
-                return { name: 'fileViewer', fileId: parts[2] };
+            // Check for file viewer format: +file+fileId+
+            if (pathSegments.length === 2 && pathSegments[0] === 'file') {
+                 // The actual fileId is the second segment
+                return { name: 'fileViewer', fileId: pathSegments[1] };
             }
-            // Ensure path ends with a slash and starts with one, unless it's just '/'
-            const normalizedPath = nav === '/' ? '/' : (nav.startsWith('/') ? nav : '/' + nav).replace(/\/\/+/g, '/');
-            return { name: 'fileManager', path: normalizedPath.endsWith('/') ? normalizedPath : normalizedPath + '/' };
+            
+            return { name: 'fileManager', path: internalPath };
         };
 
         const handleRoute = () => {
@@ -328,7 +366,6 @@
             if (route.name === 'fileManager') {
                 managerView.classList.remove('hidden');
                 viewerView.classList.add('hidden');
-                // Ensure currentPath is a valid, slash-ending path
                 currentPath = route.path; 
                 document.getElementById('currentPathDisplay').textContent = currentPath;
                 renderBreadcrumbs();
@@ -360,6 +397,7 @@
             pathSegments.forEach((segment, index) => {
                 breadcrumbsEl.appendChild(document.createTextNode(' / '));
 
+                // Calculate cumulative path for navigation
                 cumulativePath = (cumulativePath === '/') ? `/${segment}/` : `${cumulativePath}${segment}/`;
 
                 if (index < pathSegments.length - 1) {
@@ -379,9 +417,9 @@
                 }
             });
         };
-
+        
         // --- Authentication Logic (omitted for brevity) ---
-
+        // (Authentication logic remains unchanged)
         document.getElementById('toggleAuthMode').addEventListener('click', () => {
             isSignUpMode = !isSignUpMode;
             document.getElementById('authText').textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
@@ -433,6 +471,8 @@
             }
         };
         window.handleSignOut = handleSignOut;
+        // --- END Authentication Logic ---
+
 
         // --- Firestore Paths ---
 
@@ -471,6 +511,7 @@
 
             // 1. Determine or Create Metadata Document
             const metadataRef = fileId ? doc(metadataCollection, fileId) : doc(metadataCollection);
+            const isNewFile = !fileId;
             
             await setDoc(metadataRef, {
                 fileName,
@@ -478,8 +519,8 @@
                 fileSize,
                 totalChunks,
                 path: currentPath, 
-                // Only update uploadedAt if it's a new file, otherwise use serverTimestamp as update time
-                uploadedAt: fileId ? (await getDoc(metadataRef)).data().uploadedAt : serverTimestamp(),
+                // Only update uploadedAt if it's a new file
+                uploadedAt: isNewFile ? serverTimestamp() : (await getDoc(metadataRef)).data().uploadedAt,
                 updatedAt: serverTimestamp(),
             }, { merge: true });
 
@@ -534,6 +575,18 @@
 
         // --- UI Interactions ---
 
+        const isEditable = (fileType) => {
+            const type = fileType.toLowerCase();
+            return type.startsWith('text/') || 
+                   type.includes('json') || 
+                   type.includes('xml') ||
+                   type.includes('javascript') ||
+                   type.includes('css') ||
+                   type.includes('html') ||
+                   type.includes('svg') || // Added SVG
+                   type.includes('markdown'); // Added Markdown
+        };
+
         document.getElementById('fileInput').addEventListener('change', (e) => {
             const uploadButton = document.getElementById('uploadButton');
             uploadButton.disabled = e.target.files.length === 0;
@@ -550,6 +603,28 @@
             document.getElementById('folderNameInput').value = '';
         };
         window.hideCreateFolderModal = hideCreateFolderModal;
+        
+        // Modal for renaming logic
+        let folderToRename = { id: null, name: null };
+
+        const showRenameModal = (id, name) => {
+            folderToRename = { id, name };
+            document.getElementById('newFolderNameInput').value = name;
+            document.getElementById('renameModal').classList.remove('hidden');
+            document.getElementById('newFolderNameInput').focus();
+            
+            // Re-attach handler to ensure it uses the latest folderToRename context
+            document.getElementById('renameExecuteButton').onclick = () => handleFolderRename(id, name);
+        };
+        window.showRenameModal = showRenameModal;
+
+        const hideRenameModal = () => {
+            document.getElementById('renameModal').classList.add('hidden');
+            document.getElementById('newFolderNameInput').value = '';
+            folderToRename = { id: null, name: null };
+        };
+        window.hideRenameModal = hideRenameModal;
+
 
         const createFolder = async () => {
             const folderName = document.getElementById('folderNameInput').value.trim();
@@ -560,25 +635,23 @@
                 return;
             }
 
-            // Clean up name to be path-safe
             const cleanName = folderName.replace(/[/\\]/g, '').trim();
             
-            // Check if a synthetic folder already exists to prevent duplicates in the UI list
             const metadataCollection = getFileMetadataCollection(currentUserId);
-            const existingQuery = query(metadataCollection, 
-                where('path', '==', currentPath), 
-                where('isFolder', '==', true),
-                where('fileName', '==', cleanName)
-            );
-            const existingDocs = await getDocs(existingQuery);
-
-            if (!existingDocs.empty) {
-                 showMessage(`Folder '${cleanName}' already exists.`, 'info');
-                 navigate(currentPath + cleanName + '/');
-                 return;
-            }
-
+            
             try {
+                // Check for existing placeholder or synthetic folder (for better UX)
+                const existingDocs = await getDocs(query(metadataCollection, 
+                    where('path', '==', currentPath), 
+                    where('fileName', '==', cleanName)
+                ));
+
+                if (!existingDocs.empty) {
+                     showMessage(`Folder or file with name '${cleanName}' already exists in this path.`, 'info');
+                     navigate(currentPath + cleanName + '/');
+                     return;
+                }
+                
                 // Add a placeholder document that signifies the folder's existence.
                  await setDoc(doc(metadataCollection), {
                     fileName: cleanName,
@@ -598,6 +671,136 @@
         };
         window.createFolder = createFolder;
 
+        const handleFolderDelete = async (fileId, folderName) => {
+            if (!window.confirm(`Are you sure you want to delete the folder '${folderName}'? This will recursively delete ALL files and subfolders inside it. This action is permanent.`)) {
+                return;
+            }
+            
+            const folderPathToDelete = currentPath + folderName + '/';
+
+            try {
+                const batch = writeBatch(db);
+                const metadataCollection = getFileMetadataCollection(currentUserId);
+                
+                // 1. Query all documents contained in this folder path (recursively)
+                const folderContentsQuery = query(metadataCollection, 
+                    where('path', '>=', folderPathToDelete),
+                    where('path', '<=', folderPathToDelete + '\uf8ff') // \uf8ff is a high-value Unicode character for range queries
+                );
+                
+                const docsToDelete = await getDocs(folderContentsQuery);
+                
+                if (docsToDelete.empty) {
+                    showMessage(`Folder '${folderName}' was already empty.`, 'info');
+                }
+                
+                // 2. Add all contained files' metadata and chunks to the batch
+                docsToDelete.docs.forEach(docSnapshot => {
+                    const id = docSnapshot.id;
+                    // Delete metadata doc
+                    batch.delete(doc(metadataCollection, id)); 
+                    
+                    // Note: We cannot batch delete collections (chunks), so we must rely on 
+                    // a delete rule (if applicable) or client-side iteration for *massive* folders.
+                    // For now, we rely on the client only deleting the metadata. Firestore rules 
+                    // should clean up the subcollection, but since we cannot guarantee rules
+                    // are set up, we'll iterate and delete the chunks immediately only for
+                    // the target placeholder document if it exists.
+                });
+                
+                // 3. Delete the folder's placeholder document (if it exists)
+                if (fileId) {
+                    batch.delete(doc(metadataCollection, fileId));
+                }
+
+                // 4. Commit the batch
+                await batch.commit();
+
+                showMessage(`Folder '${folderName}' and all ${docsToDelete.size} contained items deleted successfully!`, 'success');
+                
+                // 5. Navigate back to the parent folder
+                if (currentPath !== '/') {
+                    const parentPath = currentPath.split('/').slice(0, -2).join('/') + '/';
+                    navigate(parentPath);
+                } else {
+                    fetchFiles();
+                }
+
+            } catch (error) {
+                console.error("Folder Delete Error:", error);
+                showMessage(`Failed to delete folder: ${error.message}`, 'error');
+            }
+        };
+        window.handleFolderDelete = handleFolderDelete;
+        
+        const handleFolderRename = async (fileId, oldName) => {
+            const newName = document.getElementById('newFolderNameInput').value.trim();
+            hideRenameModal();
+
+            if (!newName) {
+                showMessage('New folder name cannot be empty.', 'error');
+                return;
+            }
+            const cleanNewName = newName.replace(/[/\\]/g, '').trim();
+            
+            if (oldName === cleanNewName) {
+                showMessage('Name is unchanged.', 'info');
+                return;
+            }
+            
+            const oldPathSegment = `${currentPath}${oldName}/`;
+            const newPathSegment = `${currentPath}${cleanNewName}/`;
+            
+            try {
+                const batch = writeBatch(db);
+                const metadataCollection = getFileMetadataCollection(currentUserId);
+                
+                // 1. Query all documents contained in this folder path (recursively)
+                const folderContentsQuery = query(metadataCollection, 
+                    where('path', '>=', oldPathSegment),
+                    where('path', '<=', oldPathSegment + '\uf8ff')
+                );
+                
+                const docsToRename = await getDocs(folderContentsQuery);
+
+                if (docsToRename.empty && !fileId) {
+                    throw new Error("Folder placeholder not found and folder is empty. Cannot rename.");
+                }
+                
+                // 2. Update path for all contained documents
+                docsToRename.docs.forEach(docSnapshot => {
+                    const docData = docSnapshot.data();
+                    // Replace the old path segment with the new one
+                    const newPath = docData.path.replace(oldPathSegment, newPathSegment);
+                    
+                    batch.update(docSnapshot.ref, {
+                        path: newPath,
+                        updatedAt: serverTimestamp()
+                    });
+                });
+                
+                // 3. Update the folder's placeholder document (if it exists)
+                if (fileId) {
+                    batch.update(doc(metadataCollection, fileId), {
+                        fileName: cleanNewName,
+                        path: currentPath, // Placeholder stays in the current path
+                        updatedAt: serverTimestamp()
+                    });
+                }
+                
+                // 4. Commit the batch
+                await batch.commit();
+
+                showMessage(`Folder renamed to '${cleanNewName}' successfully!`, 'success');
+                
+                // 5. Navigate to the new folder path
+                navigate(newPathSegment);
+
+            } catch (error) {
+                console.error("Folder Rename Error:", error);
+                showMessage(`Failed to rename folder: ${error.message}`, 'error');
+            }
+        };
 
         const handleFileUpload = async () => {
             const fileInput = document.getElementById('fileInput');
@@ -663,7 +866,8 @@
             // Add explicit placeholder folders
             folderFiles.forEach(file => {
                  if (file.path === currentPath) {
-                    folders.set(file.fileName, file.fileName);
+                    // Store the metadata for the placeholder
+                    folders.set(file.fileName, { name: file.fileName, id: file.id }); 
                  }
             });
 
@@ -671,18 +875,20 @@
             filesToDisplay.forEach(file => {
                  // Check if the file is in an immediate subfolder
                 const remainingPath = file.path.substring(currentPath.length);
-                const segments = remainingPath.split('/').filter(s => s); // ['Folder', 'Subfolder', 'file.txt']
+                const segments = remainingPath.split('/').filter(s => s); 
                 
                 if (segments.length >= 1) {
-                    // This is the immediate subfolder name
                     const folderName = segments[0];
-                    folders.set(folderName, folderName);
+                    if (!folders.has(folderName)) {
+                         // Only add if no placeholder exists yet, and use a null ID
+                         folders.set(folderName, { name: folderName, id: null });
+                    }
                 }
             });
             
-            const folderNames = Array.from(folders.keys()).sort();
+            const folderEntries = Array.from(folders.values()).sort((a, b) => a.name.localeCompare(b.name));
 
-            if (filesToDisplay.length === 0 && folderNames.length === 0) {
+            if (filesToDisplay.length === 0 && folderEntries.length === 0) {
                 const placeholderLi = document.createElement('li');
                 placeholderLi.className = 'p-4 text-gray-500 text-center';
                 placeholderLi.textContent = 'This folder is empty.';
@@ -691,25 +897,33 @@
             }
 
             // 2. Render Folders
-            folderNames.forEach(folderName => {
-                const folderPath = currentPath + folderName + '/';
+            folderEntries.forEach(folder => {
+                const folderPath = currentPath + folder.name + '/';
                 const li = document.createElement('li');
                 li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg cursor-pointer';
                 li.onclick = () => navigate(folderPath);
                 li.innerHTML = `
                     <div class="flex items-center space-x-3">
                         <svg class="w-6 h-6 text-yellow-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v2a2 2 0 00-2-2h-8l-2-2H4a2 2 0 00-2 2v6a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>
-                        <p class="font-semibold text-gray-800">${folderName}</p>
+                        <p class="font-semibold text-gray-800">${folder.name}</p>
                     </div>
-                    <div class="text-sm text-gray-500">
-                         Folder
+                    <div class="flex items-center space-x-2">
+                         <p class="text-sm text-gray-500">Folder</p>
+                         <div class="flex space-x-2">
+                             <button title="Rename Folder" onclick="event.stopPropagation(); showRenameModal('${folder.id}', '${folder.name}');" class="text-indigo-600 hover:text-indigo-800 p-1 rounded-full hover:bg-indigo-100 transition">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button title="Delete Folder" onclick="event.stopPropagation(); handleFolderDelete('${folder.id}', '${folder.name}');" class="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                         </div>
                     </div>
                 `;
                 fileListEl.appendChild(li);
             });
 
 
-            // 3. Render Files (Filter files to only show those directly in the current path)
+            // 3. Render Files 
             const filesDirectlyInPath = filesToDisplay.filter(file => file.path === currentPath);
             
             filesDirectlyInPath.sort((a, b) => {
@@ -722,16 +936,14 @@
                 const uploadedDate = file.uploadedAt?.toDate?.()?.toLocaleDateString() || 'Pending...';
                 const fileName = file.fileName || 'Untitled File';
                 const fileSize = file.fileSize || 0;
-                const totalChunks = file.totalChunks || 0;
                 const fileSizeMB = (fileSize / 1024 / 1024).toFixed(2);
                 const fileType = file.fileType || '';
 
                 let iconHtml = '';
-                if (fileType.startsWith('image/')) {
+                if (file.firstChunk) {
                     // Image with Base64 thumbnail for preview
-                    const firstChunk = file.firstChunk || '';
                     iconHtml = `
-                        <img src="data:${fileType};base64,${firstChunk}" 
+                        <img src="data:${fileType};base64,${file.firstChunk}" 
                             class="file-preview-thumbnail object-cover" 
                             alt="Preview" 
                             onerror="this.src='https://placehold.co/48x48/CCCCCC/FFFFFF?text=IMG'">
@@ -746,7 +958,7 @@
 
                 const li = document.createElement('li');
                 li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg cursor-pointer';
-                li.onclick = () => navigate(`/file/${file.id}`); // View file on click
+                li.onclick = () => navigate(`file/${file.id}`); // View file on click
                 li.innerHTML = `
                     <div class="flex items-center space-x-3 w-3/5">
                         <div class="flex-shrink-0">
@@ -765,21 +977,13 @@
             });
         };
 
-        const isEditable = (fileType) => {
-            return fileType.startsWith('text/') || 
-                   fileType.includes('json') || 
-                   fileType.includes('xml') ||
-                   fileType.includes('javascript') ||
-                   fileType.includes('css') ||
-                   fileType.includes('html');
-        };
-
         const renderFileViewer = async (fileId) => {
             const viewerTitleEl = document.getElementById('viewerTitle');
             const viewerMetadataEl = document.getElementById('viewerMetadata');
             const viewerContentEl = document.getElementById('viewerContent');
             const viewerLoadingEl = document.getElementById('viewerLoading');
             const editorActionsEl = document.getElementById('editorActions');
+            const backButtonEl = document.getElementById('backToFolderButton');
 
             viewerContentEl.innerHTML = '';
             editorActionsEl.classList.add('hidden');
@@ -802,6 +1006,10 @@
                 viewerTitleEl.textContent = fileName;
                 viewerMetadataEl.textContent = `Type: ${fileType} | Size: ${fileSizeMB} MB | Chunks: ${totalChunks}`;
                 
+                // FIX: Update the back button to navigate to the file's containing folder path.
+                const containingFolderPath = file.path; // Already ends with '/'
+                backButtonEl.onclick = () => navigate(containingFolderPath);
+                
                 // 2. Load all chunks
                 const fullBase64 = await loadFileChunksBase64(fileId, totalChunks);
                 const blob = base64ToBlob(fullBase64, fileType);
@@ -817,8 +1025,11 @@
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         const content = e.target.result;
+                        // Determine if we should apply syntax highlighting (basic guess)
+                        const editorClass = fileType.includes('html') || fileType.includes('css') || fileType.includes('javascript') || fileType.includes('json') || fileType.includes('xml') ? 'language-code' : '';
+                        
                         viewerContentEl.innerHTML = `
-                            <textarea id="fileEditor" class="w-full h-[60vh] p-4 text-sm bg-gray-50 border border-gray-200 rounded-lg resize-none font-mono">${content}</textarea>
+                            <textarea id="fileEditor" class="w-full h-[60vh] p-4 text-sm bg-gray-50 border border-gray-200 rounded-lg resize-none font-mono ${editorClass}">${content}</textarea>
                         `;
                         editorActionsEl.classList.remove('hidden');
                         
@@ -849,7 +1060,7 @@
                 viewerLoadingEl.classList.add('hidden');
             }
         };
-        window.renderFileViewer = renderFileViewer; // Make global for button handlers
+        window.renderFileViewer = renderFileViewer; 
 
         const saveFileContent = async (fileId, fileName, fileType) => {
             const editorEl = document.getElementById('fileEditor');
@@ -865,13 +1076,13 @@
             try {
                 // Get the current path from the file's metadata for re-saving
                 const metadataDoc = await getDoc(doc(getFileMetadataCollection(currentUserId), fileId));
-                const currentPath = metadataDoc.data().path || '/';
+                const currentFilePath = metadataDoc.data().path || '/';
 
                 await saveFileChunks(
                     newBase64Data, 
                     fileName, 
                     fileType, 
-                    currentPath, 
+                    currentFilePath, 
                     fileId // Pass fileId to update existing document
                 );
                 
@@ -903,7 +1114,7 @@
             }
 
             try {
-                // 1. Delete all chunks
+                // 1. Delete all chunks (Using batch for metadata, but client delete for chunks is needed if we can't guarantee FS rules)
                 const chunksCollection = getFileChunksCollection(currentUserId, fileId);
                 const q = query(chunksCollection);
                 const chunkDocs = await getDocs(q);
@@ -936,57 +1147,60 @@
         const fetchFiles = async () => {
             if (!currentUserId) return;
 
+            const fileListEl = document.getElementById('fileList');
+            fileListEl.innerHTML = '<li class="p-4 text-center text-indigo-600"><div class="mx-auto spinner"></div><p class="mt-2">Loading files...</p></li>';
+
             try {
                 const metadataCollection = getFileMetadataCollection(currentUserId);
-                // Fetch ALL documents to enable client-side folder/subfolder logic
                 const q = query(metadataCollection);
                 const querySnapshot = await getDocs(q);
 
-                const allFiles = querySnapshot.docs.map(docSnapshot => { // 🐛 FIXED: Renamed parameter to avoid shadowing
+                const previewPromises = [];
+
+                const allFiles = querySnapshot.docs.map(docSnapshot => { 
                     const data = docSnapshot.data();
                     const fileId = docSnapshot.id;
 
-                    // CRITICAL FIX: Ensure 'path' exists for old documents
-                    if (data.path === undefined || data.path === null) {
-                        data.path = '/'; 
-                    }
-                    // Normalize path to always end with a slash for consistent comparison
+                    // Ensure path exists and is normalized
+                    data.path = (data.path === undefined || data.path === null || data.path === '') ? '/' : data.path;
                     if (data.path !== '/' && !data.path.endsWith('/')) {
                         data.path += '/';
                     }
                     
-                    // Simple hack to include the first chunk for image previews in the list
-                    // WARNING: This is a fast but non-scalable way to get preview data
-                    if (data.fileType && data.fileType.startsWith('image/') && data.totalChunks > 0 && data.firstChunk === undefined) {
-                        // FIX APPLIED HERE: The imported 'doc' function is now correctly used.
-                         getDoc(doc(getFileChunksCollection(currentUserId, fileId), '0')).then(chunkDoc => {
-                            if (chunkDoc.exists()) {
-                                data.firstChunk = chunkDoc.data().data;
-                                // Re-render the file list after the preview data arrives
-                                fetchFiles(); 
-                            }
-                         }).catch(e => console.warn("Failed to fetch first chunk for preview:", e));
+                    const file = { id: fileId, ...data };
+
+                    // FIX: Load first chunk asynchronously and wait via Promise.all
+                    if (file.fileType && file.fileType.startsWith('image/') && file.totalChunks > 0) {
+                        const chunkPromise = getDoc(doc(getFileChunksCollection(currentUserId, file.id), '0'))
+                            .then(chunkDoc => {
+                                if (chunkDoc.exists()) {
+                                    file.firstChunk = chunkDoc.data().data;
+                                }
+                            })
+                            .catch(e => console.warn(`Failed to fetch first chunk for ${file.fileName}:`, e));
+                        
+                        previewPromises.push(chunkPromise);
                     }
-                    
-                    return {
-                        id: fileId,
-                        ...data
-                    };
+                    return file;
                 });
 
-                // Filter logic is now simpler and safer because file.path is guaranteed to exist and be normalized.
+                // Wait for all image previews to load before continuing
+                await Promise.all(previewPromises);
+
+                // --- Client-side Filtering ---
                 const filesInCurrentPath = allFiles.filter(file => {
-                    // 1. Files directly in the current path (files or placeholder folders)
+                    // Check if file is directly in the current path (file or placeholder folder)
                     if (file.path === currentPath) {
                         return true;
                     }
 
-                    // 2. Files in immediate subfolders (synthetic folders)
+                    // Check for immediate subfolders (synthetic folders)
                     if (file.path.startsWith(currentPath) && file.path.length > currentPath.length) {
                         const remainingPath = file.path.substring(currentPath.length);
-                        // Is this an immediate subfolder? Check if there are no more slashes in the remainder
-                        if (remainingPath.indexOf('/') === remainingPath.length - 1) {
-                            return true; // Yes, this file proves a folder exists at this path
+                        // Check if the remainder path (excluding the trailing slash) contains no more slashes
+                        const firstSlashIndex = remainingPath.indexOf('/');
+                        if (firstSlashIndex === remainingPath.length - 1 && remainingPath.length > 1) {
+                            return true; 
                         }
                     }
                     
@@ -998,6 +1212,7 @@
             } catch (error) {
                 console.error("Fetch Files Error:", error);
                 showMessage(`Could not load files. Error: ${error.message || 'Unknown error'}. Please check console.`, 'error');
+                fileListEl.innerHTML = '<li class="p-4 text-center text-red-500">Failed to load files.</li>';
             }
         };
 

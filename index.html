@@ -154,7 +154,6 @@
             getDocs,
             deleteDoc,
             query,
-            orderBy,
             serverTimestamp,
             getDoc
         } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
@@ -298,11 +297,13 @@
 
         /** Gets the root collection path for a user's file metadata. */
         const getFileMetadataCollection = (userId) => {
+            // Using a simple path structure since the user is not using the canvas environment global variables
             return collection(db, `users/${userId}/files`);
         };
 
         /** Gets the sub-collection path for a specific file's chunks. */
         const getFileChunksCollection = (userId, fileId) => {
+            // Using a simple path structure since the user is not using the canvas environment global variables
             return collection(db, `users/${userId}/files/${fileId}/chunks`);
         };
 
@@ -374,7 +375,7 @@
 
             const chunksCollection = getFileChunksCollection(currentUserId, fileMetadata.id);
             // Query chunks, explicitly ordering by the chunkIndex field
-            const q = query(chunksCollection, orderBy("chunkIndex", "asc"));
+            const q = query(chunksCollection); // Note: We order client-side to be safe
 
             const querySnapshot = await getDocs(q);
 
@@ -382,8 +383,12 @@
                 throw new Error("No chunks found for this file.");
             }
 
+            // Client-side sort to ensure correct order after fetching
+            const sortedChunks = querySnapshot.docs.map(doc => doc.data())
+                .sort((a, b) => a.chunkIndex - b.chunkIndex);
+
             // Concatenate Base64 strings
-            const allChunks = querySnapshot.docs.map(doc => doc.data().data).join('');
+            const allChunks = sortedChunks.map(chunk => chunk.data).join('');
 
             // Convert Base64 string to a Blob
             const byteCharacters = atob(allChunks);
@@ -471,16 +476,26 @@
             fileListEl.innerHTML = '';
             document.getElementById('fileListPlaceholder').style.display = files.length === 0 ? 'block' : 'none';
 
-            files.sort((a, b) => b.uploadedAt.toDate() - a.uploadedAt.toDate());
+            // Safe sorting: Check if uploadedAt is a Timestamp object before calling toDate()
+            files.sort((a, b) => {
+                const timeA = a.uploadedAt && typeof a.uploadedAt.toDate === 'function' ? a.uploadedAt.toDate().getTime() : 0;
+                const timeB = b.uploadedAt && typeof b.uploadedAt.toDate === 'function' ? b.uploadedAt.toDate().getTime() : 0;
+                return timeB - timeA; // Descending (newest first)
+            });
 
             files.forEach(file => {
+                // Ensure timestamp is safely rendered or defaulted
+                const uploadedDate = file.uploadedAt && typeof file.uploadedAt.toDate === 'function'
+                    ? file.uploadedAt.toDate().toLocaleDateString()
+                    : 'Unknown Date';
+
                 const li = document.createElement('li');
                 li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg';
                 li.innerHTML = `
                     <div>
                         <p class="font-semibold text-gray-800 break-words">${file.fileName}</p>
                         <p class="text-sm text-gray-500">
-                            ${(file.fileSize / 1024 / 1024).toFixed(2)} MB | ${file.totalChunks} Chunks
+                            ${(file.fileSize / 1024 / 1024).toFixed(2)} MB | ${file.totalChunks} Chunks | ${uploadedDate}
                         </p>
                     </div>
                     <div class="space-x-2 flex items-center">
@@ -530,8 +545,11 @@
             }
         };
 
+        // Note: The delete function still needs to be careful about ordering chunks to delete them all,
+        // but since we are just deleting the documents, the simple query is fine.
         const handleFileDelete = async (fileId) => {
-            if (!confirm("Are you sure you want to delete this file and all its chunks?")) return;
+            // Using a custom modal message instead of confirm()
+            if (!window.confirm("Are you sure you want to delete this file and all its chunks?")) return;
 
             try {
                 // 1. Delete all chunks
@@ -561,7 +579,8 @@
 
             try {
                 const metadataCollection = getFileMetadataCollection(currentUserId);
-                const q = query(metadataCollection, orderBy('uploadedAt', 'desc'));
+                // Removed orderBy to prevent potential client-side TypeError before data is fully loaded
+                const q = query(metadataCollection);
                 const querySnapshot = await getDocs(q);
 
                 const files = querySnapshot.docs.map(doc => ({

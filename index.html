@@ -125,8 +125,9 @@
                 <h2 class="text-xl font-semibold mb-4 text-gray-700">Stored Files</h2>
 
                 <div class="file-list-container max-h-96 overflow-y-auto">
+                    <!-- The fileList UL will be populated dynamically -->
                     <ul id="fileList" class="divide-y divide-gray-200">
-                        <li id="fileListPlaceholder" class="p-4 text-gray-500 text-center">No files in your vault yet.</li>
+                        <!-- Placeholder will be dynamically added/removed by JavaScript -->
                     </ul>
                 </div>
             </div>
@@ -150,17 +151,15 @@
             collection,
             doc,
             setDoc,
-            addDoc,
             getDocs,
             deleteDoc,
             query,
             serverTimestamp,
-            getDoc
         } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
         // --- Configuration and Initialization ---
 
-        // Using user-provided config for GitHub Pages deployment
+        // Using hardcoded config as requested for GitHub Pages deployment
         const firebaseConfig = {
             apiKey: "AIzaSyAY_xxThXsNlAf_HGQFXBk1dGa6rtexbYM",
             authDomain: "vaultio-8bbdb.firebaseapp.com",
@@ -471,27 +470,33 @@
         window.handleFileUpload = handleFileUpload; // Make accessible from inline onclick
 
         /**
-         * Renders the list of files in the UI.
+         * Renders the list of files in the UI, handling the placeholder dynamically.
          * @param {Array<object>} files - Array of file metadata objects.
          */
         const renderFiles = (files) => {
             const fileListEl = document.getElementById('fileList');
-            fileListEl.innerHTML = '';
-            document.getElementById('fileListPlaceholder').style.display = files.length === 0 ? 'block' : 'none';
+            // CRITICAL FIX: Always clear the list *before* manipulating contents
+            fileListEl.innerHTML = ''; 
 
-            // CRITICAL FIX: Use optional chaining for safe access to toDate and getTime for sorting
+            if (files.length === 0) {
+                // If no files, dynamically create and append the placeholder
+                const placeholderLi = document.createElement('li');
+                placeholderLi.className = 'p-4 text-gray-500 text-center';
+                placeholderLi.textContent = 'No files in your vault yet.';
+                fileListEl.appendChild(placeholderLi);
+                return;
+            }
+            
+            // CRITICAL: Use optional chaining for safe access to toDate and getTime for sorting
             files.sort((a, b) => {
-                // Get time in milliseconds, defaulting to 0 if the timestamp is null/pending
                 const timeA = a.uploadedAt?.toDate?.()?.getTime() || 0;
                 const timeB = b.uploadedAt?.toDate?.()?.getTime() || 0;
                 return timeB - timeA; // Descending (newest first)
             });
 
             files.forEach(file => {
-                // Use optional chaining for safe date rendering, defaulting to a placeholder string
+                // Use defensive defaults for all properties
                 const uploadedDate = file.uploadedAt?.toDate?.()?.toLocaleDateString() || 'Pending...';
-                
-                // Use defensive defaults for all other properties to prevent TypeErrors in calculation/display
                 const fileName = file.fileName || 'Untitled File';
                 const fileSize = file.fileSize || 0;
                 const totalChunks = file.totalChunks || 0;
@@ -557,8 +562,10 @@
         };
 
         const handleFileDelete = async (fileId) => {
-            // NOTE: Using a simple JS prompt since window.confirm() is disallowed.
-            if (!window.confirm("Are you sure you want to delete this file and all its chunks?")) return;
+            // Reverting to window.confirm() since the app is hosted on GitHub Pages (not a restricted iframe)
+            if (!window.confirm("Are you sure you want to delete this file and all its chunks? This action is permanent.")) {
+                return;
+            }
 
             try {
                 // 1. Delete all chunks
@@ -598,9 +605,9 @@
                 }));
                 renderFiles(files);
             } catch (error) {
-                // Critical update: Log the detailed message to help diagnose the true TypeError source
+                // CRITICAL: Log the detailed message to help diagnose any future TypeErrors
                 console.error("Fetch Files Error:", error);
-                showMessage(`Could not load files. Error: ${error.message || 'Unknown TypeError'}. Please check console.`, 'error');
+                showMessage(`Could not load files. Error: ${error.message || 'Unknown error'}. Please check console.`, 'error');
             }
         };
 

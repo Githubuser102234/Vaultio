@@ -307,8 +307,8 @@
         // --- Navigation and Routing ---
 
         /**
-         * Navigates using standard URL query parameters (?type=...&path=... or ?type=...&id=...)
-         * Uses '|' as a path separator in the URL path parameter to avoid '%2F' encoding.
+         * Navigates using the new clean URL query parameters (?view=...&nav=... or ?view=...&id=...)
+         * Uses '|' as a path separator in the URL query parameter to avoid '%2F' encoding.
          * @param {string} route - Either a folder path (e.g., '/your/folder/path/') or a file ID prefix (e.g., 'file/myFileId')
          * @param {boolean} replace - Use replaceState instead of pushState
          */
@@ -318,7 +318,8 @@
             if (route.startsWith('file/')) {
                 // File Viewer Route: route = 'file/fileId'
                 const fileId = route.substring(5);
-                const params = new URLSearchParams({ type: 'file', id: fileId });
+                // Use 'view=file' and 'id'
+                const params = new URLSearchParams({ view: 'file', id: fileId });
                 search = '?' + params.toString();
             } else {
                 // Folder Manager Route: route = '/path/to/folder/'
@@ -332,10 +333,12 @@
                 }
                 
                 // 2. Prepare path for URL parameter: remove leading/trailing slashes and use '|' separator
+                // This ensures we have a clean string like 'segment1|segment2'
                 let pathParam = path.substring(1, path.length - 1); // Removes first and last slash
                 pathParam = pathParam.replace(/\//g, '|'); // Replace internal slashes with pipes
                 
-                const params = new URLSearchParams({ type: 'folder', path: pathParam });
+                // Use 'view=folder' and 'nav'
+                const params = new URLSearchParams({ view: 'folder', nav: pathParam });
                 search = '?' + params.toString();
             }
 
@@ -353,9 +356,9 @@
          */
         const getRouteParams = () => {
             const params = new URLSearchParams(window.location.search);
-            const type = params.get('type');
+            const view = params.get('view'); // Use 'view'
 
-            if (type === 'file') {
+            if (view === 'file') {
                 const fileId = params.get('id');
                 if (fileId) {
                     return { name: 'fileViewer', fileId: fileId };
@@ -363,7 +366,7 @@
             }
             
             // Default to 'fileManager' (folder view)
-            let pathParam = params.get('path'); 
+            let pathParam = params.get('nav'); // Use 'nav'
             let path = '/';
 
             if (pathParam && pathParam.length > 0) {
@@ -497,6 +500,7 @@
         // --- Firestore Paths ---
 
         const getFileMetadataCollection = (userId) => {
+            // Note: In your actual deployed environment, this path should use __app_id 
             return collection(db, `users/${userId}/files`);
         };
 
@@ -509,6 +513,7 @@
         const fileToBase64 = (file) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
+                // Ensure we only extract the Base64 portion after the comma
                 reader.onload = () => resolve(reader.result.split(',')[1]);
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
@@ -603,8 +608,8 @@
                    type.includes('javascript') ||
                    type.includes('css') ||
                    type.includes('html') ||
-                   type.includes('svg') || // Added SVG
-                   type.includes('markdown'); // Added Markdown
+                   type.includes('svg') || 
+                   type.includes('markdown'); 
         };
 
         document.getElementById('fileInput').addEventListener('change', (e) => {
@@ -1024,7 +1029,7 @@
                 viewerTitleEl.textContent = fileName;
                 viewerMetadataEl.textContent = `Type: ${fileType} | Size: ${fileSizeMB} MB | Chunks: ${totalChunks}`;
                 
-                // FIX: Update the back button to navigate to the file's containing folder path.
+                // Update the back button to navigate to the file's containing folder path.
                 const containingFolderPath = file.path; // Already ends with '/'
                 backButtonEl.onclick = () => navigate(containingFolderPath);
                 

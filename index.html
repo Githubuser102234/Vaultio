@@ -308,7 +308,8 @@
 
         /**
          * Navigates using standard URL query parameters (?type=...&path=... or ?type=...&id=...)
-         * @param {string} route - Either a folder path (e.g., '/') or a file ID prefix (e.g., 'file/myFileId')
+         * Uses '|' as a path separator in the URL path parameter to avoid '%2F' encoding.
+         * @param {string} route - Either a folder path (e.g., '/your/folder/path/') or a file ID prefix (e.g., 'file/myFileId')
          * @param {boolean} replace - Use replaceState instead of pushState
          */
         const navigate = (route, replace = false) => {
@@ -322,11 +323,19 @@
             } else {
                 // Folder Manager Route: route = '/path/to/folder/'
                 let path = route;
-                // Normalize path to always end with a slash, unless it's just '/'
-                if (path !== '/' && !path.endsWith('/')) {
-                    path += '/';
+                
+                // 1. Normalize path to internal representation
+                if (path === '/') {
+                    path = '/';
+                } else {
+                    path = '/' + path.split('/').filter(s => s).join('/') + '/';
                 }
-                const params = new URLSearchParams({ type: 'folder', path: path });
+                
+                // 2. Prepare path for URL parameter: remove leading/trailing slashes and use '|' separator
+                let pathParam = path.substring(1, path.length - 1); // Removes first and last slash
+                pathParam = pathParam.replace(/\//g, '|'); // Replace internal slashes with pipes
+                
+                const params = new URLSearchParams({ type: 'folder', path: pathParam });
                 search = '?' + params.toString();
             }
 
@@ -340,7 +349,7 @@
         window.navigate = navigate;
 
         /**
-         * Parses the URL query parameters to determine the current view and parameters.
+         * Parses the URL query parameters, translating '|' back to '/' for internal use.
          */
         const getRouteParams = () => {
             const params = new URLSearchParams(window.location.search);
@@ -354,7 +363,16 @@
             }
             
             // Default to 'fileManager' (folder view)
-            const path = params.get('path') || '/';
+            let pathParam = params.get('path'); 
+            let path = '/';
+
+            if (pathParam && pathParam.length > 0) {
+                // 1. Replace '|' back with '/'
+                path = pathParam.replace(/\|/g, '/'); 
+                // 2. Normalize path to internal representation (guarantee leading and trailing slash)
+                path = '/' + path.split('/').filter(s => s).join('/') + '/';
+            }
+            
             return { name: 'fileManager', path: path };
         };
 

@@ -34,13 +34,21 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* Custom scrollbar for file list */
+        .file-list-container {
+            max-height: 400px;
+        }
         .file-list-container::-webkit-scrollbar {
             width: 6px;
         }
         .file-list-container::-webkit-scrollbar-thumb {
             background-color: #cbd5e1;
             border-radius: 3px;
+        }
+        .file-preview-thumbnail {
+            width: 48px;
+            height: 48px;
+            object-fit: cover;
+            border-radius: 6px;
         }
     </style>
 </head>
@@ -67,33 +75,27 @@
 
         <!-- Auth View -->
         <div id="authView" class="flex flex-col items-center justify-center min-h-[70vh]">
+            <!-- ... Auth Form Content (Unchanged) ... -->
             <div class="vault-card p-8 w-full max-w-md rounded-2xl">
                 <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Welcome to Vaultio</h2>
-
-                <!-- Email/Password Form -->
                 <form id="authForm" class="space-y-4">
                     <input type="email" id="email" placeholder="Email" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
                     <input type="password" id="password" placeholder="Password" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
-
                     <button type="submit" id="authSubmitButton" class="w-full btn-primary bg-indigo-600 text-white p-3 rounded-lg font-semibold hover:bg-indigo-700 flex items-center justify-center">
                         <span id="authText">Sign In</span>
                         <div id="authSpinner" class="spinner ml-2 hidden"></div>
                     </button>
                 </form>
-
                 <div class="text-center mt-4">
                     <button id="toggleAuthMode" class="text-sm text-indigo-600 hover:text-indigo-800 transition">
                         Need an account? Sign Up
                     </button>
                 </div>
-
                 <div class="flex items-center my-6">
                     <div class="flex-grow border-t border-gray-300"></div>
                     <span class="flex-shrink mx-4 text-gray-500 text-sm">OR</span>
                     <div class="flex-grow border-t border-gray-300"></div>
                 </div>
-
-                <!-- Google Sign-In -->
                 <button onclick="signInWithGoogle()" class="w-full btn-primary bg-white border border-gray-300 text-gray-700 p-3 rounded-lg font-semibold hover:bg-gray-50 flex items-center justify-center">
                     <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google logo" class="w-5 h-5 mr-3"/>
                     Sign In with Google
@@ -101,13 +103,26 @@
             </div>
         </div>
 
-        <!-- File Manager View -->
-        <div id="fileManagerView" class="hidden">
-            <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center md:text-left">Your Vault</h1>
+        <!-- File Manager View (Home/Folder View) -->
+        <div id="fileManagerView" class="hidden max-w-4xl mx-auto">
+
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2 md:mb-0">File Manager</h1>
+                <div class="flex space-x-2 w-full md:w-auto">
+                    <button onclick="showCreateFolderModal()" class="bg-indigo-500 text-white py-2 px-4 rounded-lg font-semibold hover:bg-indigo-600 transition">
+                        New Folder
+                    </button>
+                </div>
+            </div>
+
+            <!-- Breadcrumbs -->
+            <nav id="breadcrumbs" class="text-sm text-gray-600 mb-4 flex items-center space-x-2">
+                <!-- Breadcrumbs rendered here -->
+            </nav>
 
             <!-- File Upload Section -->
             <div class="vault-card p-6 rounded-2xl mb-8">
-                <h2 class="text-xl font-semibold mb-4 text-gray-700">Upload a New File</h2>
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Upload to: <span id="currentPathDisplay" class="font-mono text-indigo-600 text-base">/</span></h2>
                 <input type="file" id="fileInput" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
 
                 <button id="uploadButton" onclick="handleFileUpload()" class="mt-4 btn-primary bg-green-500 text-white p-3 rounded-lg font-semibold hover:bg-green-600 w-full flex items-center justify-center" disabled>
@@ -120,15 +135,44 @@
                 </div>
             </div>
 
-            <!-- File List Section -->
+            <!-- File/Folder List Section -->
             <div class="vault-card p-6 rounded-2xl">
-                <h2 class="text-xl font-semibold mb-4 text-gray-700">Stored Files</h2>
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Contents</h2>
 
-                <div class="file-list-container max-h-96 overflow-y-auto">
-                    <!-- The fileList UL will be populated dynamically -->
+                <div class="file-list-container overflow-y-auto">
                     <ul id="fileList" class="divide-y divide-gray-200">
-                        <!-- Placeholder will be dynamically added/removed by JavaScript -->
+                        <!-- Contents rendered here -->
                     </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Viewer View -->
+        <div id="fileViewerView" class="hidden max-w-4xl mx-auto vault-card p-6 rounded-2xl">
+            <button onclick="navigate('/')" class="text-indigo-600 hover:text-indigo-800 mb-4 flex items-center transition">
+                <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to Files
+            </button>
+            <h1 id="viewerTitle" class="text-3xl font-bold text-gray-800 mb-4"></h1>
+            <p id="viewerMetadata" class="text-sm text-gray-500 mb-6"></p>
+
+            <div id="viewerContent" class="w-full bg-gray-100 p-4 rounded-lg overflow-auto max-h-[70vh] flex justify-center items-center">
+                <!-- File content (image/video/text) rendered here -->
+            </div>
+            <div id="viewerLoading" class="hidden text-center p-8 text-indigo-600">
+                <div class="mx-auto spinner"></div>
+                <p class="mt-3">Loading all file chunks...</p>
+            </div>
+        </div>
+
+        <!-- Create Folder Modal -->
+        <div id="folderModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center">
+            <div class="bg-white p-6 rounded-xl w-full max-w-sm vault-card">
+                <h3 class="text-xl font-semibold mb-4">Create New Folder</h3>
+                <input type="text" id="folderNameInput" placeholder="Folder Name (e.g., Photos)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 mb-4">
+                <div class="flex justify-end space-x-3">
+                    <button onclick="hideCreateFolderModal()" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-400 transition">Cancel</button>
+                    <button onclick="createFolder()" class="bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition">Create</button>
                 </div>
             </div>
         </div>
@@ -155,11 +199,12 @@
             deleteDoc,
             query,
             serverTimestamp,
+            where
         } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
         // --- Configuration and Initialization ---
 
-        // Using hardcoded config as requested for GitHub Pages deployment
+        // NOTE: Keeping the previous hardcoded config for your GitHub Pages environment.
         const firebaseConfig = {
             apiKey: "AIzaSyAY_xxThXsNlAf_HGQFXBk1dGa6rtexbYM",
             authDomain: "vaultio-8bbdb.firebaseapp.com",
@@ -179,21 +224,16 @@
         const CHUNK_SIZE_CHARS = 500 * 1024;
         let isSignUpMode = false;
         let currentUserId = null;
+        let currentPath = '/'; // Root folder path
 
         // --- Utility Functions ---
 
-        /**
-         * Displays a temporary, stylish message box.
-         * @param {string} message - The message content.
-         * @param {string} type - 'success', 'error', or 'info'.
-         */
         const showMessage = (message, type = 'info') => {
             const box = document.getElementById('messageBox');
             const colorClass = type === 'error' ? 'bg-red-500 text-white' :
                                  type === 'success' ? 'bg-green-500 text-white' :
                                  'bg-blue-500 text-white';
 
-            // Log error to console for debugging
             if (type === 'error') {
                 console.error("UI Error Message:", message);
             }
@@ -201,28 +241,12 @@
             box.className = `fixed top-20 left-1/2 transform -translate-x-1/2 w-full max-w-sm p-4 rounded-xl text-center z-50 transition-opacity duration-300 vault-card opacity-0 ${colorClass}`;
             box.textContent = message;
 
-            // Fade in
             box.classList.remove('hidden');
-            setTimeout(() => {
-                box.classList.remove('opacity-0');
-                box.classList.add('opacity-100');
-            }, 10);
-
-            // Fade out after 3 seconds
-            setTimeout(() => {
-                box.classList.remove('opacity-100');
-                box.classList.add('opacity-0');
-            }, 3000);
-
-            // Hide completely after fade out
-            setTimeout(() => {
-                box.classList.add('hidden');
-            }, 3500);
+            setTimeout(() => { box.classList.remove('opacity-0'); box.classList.add('opacity-100'); }, 10);
+            setTimeout(() => { box.classList.remove('opacity-100'); box.classList.add('opacity-0'); }, 3000);
+            setTimeout(() => { box.classList.add('hidden'); }, 3500);
         };
 
-        /**
-         * Toggles loading state for buttons.
-         */
         const toggleLoading = (buttonId, spinnerId, textId, isLoading) => {
             const button = document.getElementById(buttonId);
             const spinner = document.getElementById(spinnerId);
@@ -240,7 +264,107 @@
             }
         };
 
-        // --- Authentication Logic ---
+        /**
+         * Converts Base64 data string back into a Blob object.
+         * @param {string} base64Data - The full Base64 string.
+         * @param {string} fileType - MIME type of the file.
+         * @returns {Blob} The resulting Blob object.
+         */
+        const base64ToBlob = (base64Data, fileType) => {
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: fileType });
+        };
+
+        // --- Navigation and Routing ---
+
+        const navigate = (path, replace = false) => {
+            const search = `?nav=${encodeURIComponent(path)}`;
+            if (replace) {
+                window.history.replaceState(null, '', search);
+            } else {
+                window.history.pushState(null, '', search);
+            }
+            handleRoute();
+        };
+        window.navigate = navigate; // Make global
+
+        const getRouteParams = () => {
+            const params = new URLSearchParams(window.location.search);
+            const nav = params.get('nav') || '/';
+            const parts = nav.split('/');
+
+            if (parts[1] === 'file' && parts.length === 3 && parts[2]) {
+                return { name: 'fileViewer', fileId: parts[2] };
+            }
+            return { name: 'fileManager', path: nav === '/' ? '/' : (nav.endsWith('/') ? nav : nav + '/') };
+        };
+
+        const handleRoute = () => {
+            if (!currentUserId) return; // Wait for auth
+
+            const route = getRouteParams();
+            const managerView = document.getElementById('fileManagerView');
+            const viewerView = document.getElementById('fileViewerView');
+
+            if (route.name === 'fileManager') {
+                managerView.classList.remove('hidden');
+                viewerView.classList.add('hidden');
+                currentPath = route.path;
+                document.getElementById('currentPathDisplay').textContent = currentPath;
+                renderBreadcrumbs();
+                fetchFiles();
+            } else if (route.name === 'fileViewer' && route.fileId) {
+                managerView.classList.add('hidden');
+                viewerView.classList.remove('hidden');
+                renderFileViewer(route.fileId);
+            }
+        };
+        window.addEventListener('popstate', handleRoute); // Handle back/forward
+
+        const renderBreadcrumbs = () => {
+            const breadcrumbsEl = document.getElementById('breadcrumbs');
+            breadcrumbsEl.innerHTML = '';
+            const pathSegments = currentPath.split('/').filter(s => s); // ['Photos', 'Vacation']
+
+            // Root Link
+            const rootLink = document.createElement('a');
+            rootLink.className = 'text-indigo-600 hover:text-indigo-800 cursor-pointer';
+            rootLink.textContent = 'Vault';
+            rootLink.onclick = () => navigate('/');
+            breadcrumbsEl.appendChild(rootLink);
+            breadcrumbsEl.appendChild(document.createTextNode(' / '));
+
+            let cumulativePath = '/';
+
+            pathSegments.forEach((segment, index) => {
+                cumulativePath += segment + '/';
+
+                const segmentLink = document.createElement('a');
+                segmentLink.className = 'text-indigo-600 hover:text-indigo-800 cursor-pointer';
+                segmentLink.textContent = segment;
+
+                if (index < pathSegments.length - 1) {
+                    // Intermediate folder
+                    const pathCopy = cumulativePath;
+                    segmentLink.onclick = () => navigate(pathCopy);
+                    breadcrumbsEl.appendChild(segmentLink);
+                    breadcrumbsEl.appendChild(document.createTextNode(' / '));
+                } else {
+                    // Current folder (just display text)
+                    const currentSpan = document.createElement('span');
+                    currentSpan.className = 'font-semibold text-gray-800';
+                    currentSpan.textContent = segment;
+                    breadcrumbsEl.appendChild(currentSpan);
+                }
+            });
+        };
+
+        // --- Authentication Logic (omitted for brevity, assume unchanged) ---
 
         document.getElementById('toggleAuthMode').addEventListener('click', () => {
             isSignUpMode = !isSignUpMode;
@@ -255,9 +379,7 @@
             const buttonId = 'authSubmitButton';
             const spinnerId = 'authSpinner';
             const textId = 'authText';
-
             toggleLoading(buttonId, spinnerId, textId, true);
-
             try {
                 if (isSignUpMode) {
                     await createUserWithEmailAndPassword(auth, email, password);
@@ -283,7 +405,6 @@
                 showMessage(error.message.replace('Firebase: ', ''), 'error');
             }
         };
-        window.signInWithGoogle = signInWithGoogle; // Make accessible from inline onclick
 
         const handleSignOut = async () => {
             try {
@@ -294,46 +415,32 @@
                 showMessage('Could not sign out.', 'error');
             }
         };
-        window.handleSignOut = handleSignOut; // Make accessible from inline onclick
-
 
         // --- Firestore Paths ---
 
-        /** Gets the root collection path for a user's file metadata. */
         const getFileMetadataCollection = (userId) => {
             return collection(db, `users/${userId}/files`);
         };
 
-        /** Gets the sub-collection path for a specific file's chunks. */
         const getFileChunksCollection = (userId, fileId) => {
             return collection(db, `users/${userId}/files/${fileId}/chunks`);
         };
 
         // --- File I/O Logic (Chunking & Dechunking) ---
 
-        /**
-         * Reads a File object and converts it to a Base64 string.
-         * @param {File} file - The file to read.
-         * @returns {Promise<string>} Base64 data string.
-         */
         const fileToBase64 = (file) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(',')[1]); // Only keep the base64 part
+                reader.onload = () => resolve(reader.result.split(',')[1]);
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
             });
         };
 
         /**
-         * Saves a Base64 string in chunks to Firestore.
-         * @param {string} base64Data - The full Base64 string.
-         * @param {string} fileName - Name of the file.
-         * @param {string} fileType - MIME type of the file.
-         * @param {number} fileSize - Size of the file in bytes.
-         * @param {function(number)} onProgress - Callback for progress updates.
+         * Saves a Base64 string in chunks to Firestore. Now includes the currentPath.
          */
-        const saveFileChunks = async (base64Data, fileName, fileType, fileSize, onProgress) => {
+        const saveFileChunks = async (base64Data, fileName, fileType, fileSize, currentPath, onProgress) => {
             if (!currentUserId) throw new Error("User not authenticated.");
 
             const chunks = [];
@@ -350,6 +457,7 @@
                 fileType,
                 fileSize,
                 totalChunks,
+                path: currentPath, // New field for folder support
                 uploadedAt: serverTimestamp(),
             });
 
@@ -357,7 +465,6 @@
             const chunksCollection = getFileChunksCollection(currentUserId, metadataRef.id);
             for (let i = 0; i < totalChunks; i++) {
                 const chunkData = chunks[i];
-                // Firestore document ID for chunk is its index for easy retrieval and ordering
                 await setDoc(doc(chunksCollection, String(i)), {
                     chunkIndex: i,
                     data: chunkData
@@ -369,14 +476,12 @@
         };
 
         /**
-         * Loads and reconstructs a file from Firestore chunks.
-         * @param {object} fileMetadata - The file metadata object.
+         * Loads and reconstructs a file from Firestore chunks, returning the full Base64 string.
          */
-        const loadFileChunks = async (fileMetadata) => {
+        const loadFileChunksBase64 = async (fileId, totalChunks) => {
             if (!currentUserId) throw new Error("User not authenticated.");
 
-            const chunksCollection = getFileChunksCollection(currentUserId, fileMetadata.id);
-            // Query all chunks
+            const chunksCollection = getFileChunksCollection(currentUserId, fileId);
             const q = query(chunksCollection);
 
             const querySnapshot = await getDocs(q);
@@ -389,28 +494,16 @@
             const sortedChunks = querySnapshot.docs.map(doc => doc.data())
                 .sort((a, b) => a.chunkIndex - b.chunkIndex);
 
+            // Ensure we have the expected number of chunks
+            if (sortedChunks.length !== totalChunks) {
+                console.warn(`Expected ${totalChunks} chunks, found ${sortedChunks.length}. Attempting reconstruction anyway.`);
+            }
+
             // Concatenate Base64 strings
             const allChunks = sortedChunks.map(chunk => chunk.data).join('');
-
-            // Convert Base64 string to a Blob
-            const byteCharacters = atob(allChunks);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: fileMetadata.fileType });
-
-            // Trigger download
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileMetadata.fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            return allChunks;
         };
+
 
         // --- UI Interactions ---
 
@@ -418,6 +511,62 @@
             const uploadButton = document.getElementById('uploadButton');
             uploadButton.disabled = e.target.files.length === 0;
         });
+
+        const showCreateFolderModal = () => {
+            document.getElementById('folderModal').classList.remove('hidden');
+            document.getElementById('folderNameInput').focus();
+        };
+        window.showCreateFolderModal = showCreateFolderModal;
+
+        const hideCreateFolderModal = () => {
+            document.getElementById('folderModal').classList.add('hidden');
+            document.getElementById('folderNameInput').value = '';
+        };
+        window.hideCreateFolderModal = hideCreateFolderModal;
+
+        /**
+         * Creates a new 'synthetic' folder by adding a dummy file/placeholder.
+         * Note: This is a simplified implementation. The true check for a folder relies on file paths.
+         */
+        const createFolder = async () => {
+            const folderName = document.getElementById('folderNameInput').value.trim();
+            hideCreateFolderModal();
+
+            if (!folderName) {
+                showMessage('Folder name cannot be empty.', 'error');
+                return;
+            }
+
+            // Clean up name to be path-safe and add trailing slash
+            const cleanName = folderName.replace(/[^a-zA-Z0-9\s-_]/g, '').trim();
+            const newPathSegment = cleanName + '/';
+
+            // The actual folder creation is simply navigating to it.
+            // When a file is uploaded to this new path, the folder will naturally appear.
+            // For now, we navigate, but we should add a dummy file for visibility if no files exist yet.
+            const newPath = currentPath + newPathSegment;
+
+            try {
+                // To ensure the folder appears immediately, we add a placeholder document
+                // that signifies the folder's existence.
+                const metadataCollection = getFileMetadataCollection(currentUserId);
+                 await setDoc(doc(metadataCollection), {
+                    fileName: cleanName,
+                    fileType: 'folder/placeholder',
+                    fileSize: 0,
+                    totalChunks: 0,
+                    path: currentPath,
+                    isFolder: true,
+                    uploadedAt: serverTimestamp(),
+                });
+                showMessage(`Folder '${cleanName}' created!`, 'success');
+                fetchFiles();
+            } catch (error) {
+                showMessage(`Failed to create folder: ${error.message}`, 'error');
+            }
+        };
+        window.createFolder = createFolder;
+
 
         const handleFileUpload = async () => {
             const fileInput = document.getElementById('fileInput');
@@ -438,25 +587,22 @@
             progressContainer.classList.remove('hidden');
 
             try {
-                // 1. Read file as Base64
                 const base64Data = await fileToBase64(file);
 
-                // 2. Save in chunks to Firestore
                 await saveFileChunks(
                     base64Data,
                     file.name,
                     file.type || 'application/octet-stream',
                     file.size,
+                    currentPath, // Pass the current folder path
                     (progress) => {
                         progressBarEl.style.width = `${progress}%`;
                     }
                 );
 
                 showMessage('File uploaded and chunked successfully!', 'success');
-                fileInput.value = null; // Clear input
+                fileInput.value = null;
                 uploadButton.disabled = true;
-
-                // Refresh file list
                 fetchFiles();
 
             } catch (error) {
@@ -467,102 +613,188 @@
                 setTimeout(() => progressContainer.classList.add('hidden'), 500);
             }
         };
-        window.handleFileUpload = handleFileUpload; // Make accessible from inline onclick
+        window.handleFileUpload = handleFileUpload;
 
         /**
-         * Renders the list of files in the UI, handling the placeholder dynamically.
-         * @param {Array<object>} files - Array of file metadata objects.
+         * Renders the list of files and folders in the UI.
          */
         const renderFiles = (files) => {
             const fileListEl = document.getElementById('fileList');
-            // CRITICAL FIX: Always clear the list *before* manipulating contents
-            fileListEl.innerHTML = ''; 
+            fileListEl.innerHTML = '';
+            
+            // Filter out placeholder folder documents, only look at files
+            const filesToDisplay = files.filter(f => !f.isFolder);
 
-            if (files.length === 0) {
-                // If no files, dynamically create and append the placeholder
+            // Sort files: newest first
+            filesToDisplay.sort((a, b) => {
+                const timeA = a.uploadedAt?.toDate?.()?.getTime() || 0;
+                const timeB = b.uploadedAt?.toDate?.()?.getTime() || 0;
+                return timeB - timeA;
+            });
+
+            // 1. Identify folders (placeholder folders + synthetic folders)
+            const folders = new Set();
+            files.forEach(file => {
+                if (file.isFolder && file.path === currentPath) {
+                    folders.add(file.fileName);
+                } else if (file.path.startsWith(currentPath) && file.path !== currentPath) {
+                    // This file is in a subfolder. Extract the immediate subfolder name.
+                    const remainingPath = file.path.substring(currentPath.length);
+                    const firstSegment = remainingPath.split('/')[0];
+                    if (firstSegment) {
+                         folders.add(firstSegment);
+                    }
+                }
+            });
+            const folderNames = Array.from(folders).sort();
+
+
+            if (filesToDisplay.length === 0 && folderNames.length === 0) {
                 const placeholderLi = document.createElement('li');
                 placeholderLi.className = 'p-4 text-gray-500 text-center';
-                placeholderLi.textContent = 'No files in your vault yet.';
+                placeholderLi.textContent = 'This folder is empty.';
                 fileListEl.appendChild(placeholderLi);
                 return;
             }
-            
-            // CRITICAL: Use optional chaining for safe access to toDate and getTime for sorting
-            files.sort((a, b) => {
-                const timeA = a.uploadedAt?.toDate?.()?.getTime() || 0;
-                const timeB = b.uploadedAt?.toDate?.()?.getTime() || 0;
-                return timeB - timeA; // Descending (newest first)
+
+            // 2. Render Folders
+            folderNames.forEach(folderName => {
+                const folderPath = currentPath + folderName + '/';
+                const li = document.createElement('li');
+                li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg cursor-pointer';
+                li.onclick = () => navigate(folderPath);
+                li.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-6 h-6 text-yellow-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v2a2 2 0 00-2-2h-8l-2-2H4a2 2 0 00-2 2v6a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>
+                        <p class="font-semibold text-gray-800">${folderName}</p>
+                    </div>
+                    <div class="text-sm text-gray-500">
+                         Folder
+                    </div>
+                `;
+                fileListEl.appendChild(li);
             });
 
-            files.forEach(file => {
-                // Use defensive defaults for all properties
+
+            // 3. Render Files
+            filesToDisplay.forEach(file => {
                 const uploadedDate = file.uploadedAt?.toDate?.()?.toLocaleDateString() || 'Pending...';
                 const fileName = file.fileName || 'Untitled File';
                 const fileSize = file.fileSize || 0;
                 const totalChunks = file.totalChunks || 0;
-                
-                // Safe size calculation
                 const fileSizeMB = (fileSize / 1024 / 1024).toFixed(2);
+                const fileType = file.fileType || '';
 
+                // Get icon based on MIME type
+                let iconHtml = '';
+                if (fileType.startsWith('image/')) {
+                    iconHtml = `<svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-2-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>`;
+                } else if (fileType.startsWith('video/')) {
+                    iconHtml = `<svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14m-5-4v4"></path></svg>`;
+                } else if (fileType.includes('pdf')) {
+                     iconHtml = `<svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>`;
+                } else {
+                    iconHtml = `<svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>`;
+                }
 
                 const li = document.createElement('li');
-                li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg';
+                li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg cursor-pointer';
+                li.onclick = () => navigate(`/file/${file.id}`); // View file on click
                 li.innerHTML = `
-                    <div>
-                        <p class="font-semibold text-gray-800 break-words">${fileName}</p>
-                        <p class="text-sm text-gray-500">
-                            ${fileSizeMB} MB | ${totalChunks} Chunks | ${uploadedDate}
-                        </p>
+                    <div class="flex items-center space-x-3 w-3/5">
+                        <div class="flex-shrink-0">
+                            ${iconHtml}
+                        </div>
+                        <p class="font-medium text-gray-800 truncate">${fileName}</p>
                     </div>
-                    <div class="space-x-2 flex items-center">
-                        <button class="download-btn bg-indigo-500 text-white p-2 rounded-full hover:bg-indigo-600 transition" data-file-id="${file.id}" title="Download File">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        </button>
-                        <button class="delete-btn bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition" data-file-id="${file.id}" title="Delete File">
+                    <div class="flex items-center space-x-4">
+                        <p class="text-sm text-gray-500 hidden sm:block">${fileSizeMB} MB</p>
+                        <button class="delete-btn bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition flex-shrink-0" data-file-id="${file.id}" title="Delete File" onclick="event.stopPropagation(); handleFileDelete('${file.id}');">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
                 `;
                 fileListEl.appendChild(li);
             });
-
-            document.querySelectorAll('.download-btn').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const fileId = e.currentTarget.getAttribute('data-file-id');
-                    const file = files.find(f => f.id === fileId);
-                    if (file) handleFileDownload(file);
-                });
-            });
-
-            document.querySelectorAll('.delete-btn').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const fileId = e.currentTarget.getAttribute('data-file-id');
-                    handleFileDelete(fileId);
-                });
-            });
         };
 
-        const handleFileDownload = async (fileMetadata) => {
-            const btn = document.querySelector(`[data-file-id="${fileMetadata.id}"].download-btn`);
-            const originalHtml = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = `<div class="spinner w-5 h-5"></div>`; // Show loading spinner
+        const renderFileViewer = async (fileId) => {
+            const viewerTitleEl = document.getElementById('viewerTitle');
+            const viewerMetadataEl = document.getElementById('viewerMetadata');
+            const viewerContentEl = document.getElementById('viewerContent');
+            const viewerLoadingEl = document.getElementById('viewerLoading');
+
+            viewerContentEl.innerHTML = '';
+            viewerTitleEl.textContent = 'Loading File...';
+            viewerMetadataEl.textContent = '';
+            viewerLoadingEl.classList.remove('hidden');
 
             try {
-                showMessage(`Downloading "${fileMetadata.fileName}"... Reconstructing ${fileMetadata.totalChunks} chunks.`, 'info');
-                await loadFileChunks(fileMetadata);
-                showMessage(`"${fileMetadata.fileName}" downloaded successfully!`, 'success');
+                // 1. Fetch metadata
+                const metadataDoc = await getDoc(doc(getFileMetadataCollection(currentUserId), fileId));
+                if (!metadataDoc.exists()) {
+                    throw new Error("File not found.");
+                }
+                const file = { id: metadataDoc.id, ...metadataDoc.data() };
+                const totalChunks = file.totalChunks || 0;
+                const fileName = file.fileName || 'Unknown File';
+                const fileSizeMB = ((file.fileSize || 0) / 1024 / 1024).toFixed(2);
+                const fileType = file.fileType || 'application/octet-stream';
+
+                viewerTitleEl.textContent = fileName;
+                viewerMetadataEl.textContent = `Type: ${fileType} | Size: ${fileSizeMB} MB | Chunks: ${totalChunks}`;
+
+                // 2. Load all chunks
+                const fullBase64 = await loadFileChunksBase64(fileId, totalChunks);
+                const blob = base64ToBlob(fullBase64, fileType);
+                const objectUrl = URL.createObjectURL(blob);
+
+                // 3. Render content based on MIME type
+                if (fileType.startsWith('image/')) {
+                    viewerContentEl.innerHTML = `<img src="${objectUrl}" alt="${fileName}" class="max-w-full max-h-full rounded-lg shadow-xl" onerror="this.outerHTML='<p class=\\'text-red-500\\'>Error displaying image.</p>'">`;
+                } else if (fileType.startsWith('video/')) {
+                    viewerContentEl.innerHTML = `<video src="${objectUrl}" controls class="max-w-full max-h-full rounded-lg shadow-xl"></video>`;
+                } else if (fileType.startsWith('text/') || fileType.includes('json') || fileType.includes('xml')) {
+                    // For text-based files, read content as text
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        viewerContentEl.innerHTML = `<pre class="whitespace-pre-wrap p-4 text-sm bg-gray-50 border border-gray-200 rounded-lg overflow-auto max-h-[60vh]">${e.target.result}</pre>`;
+                    };
+                    reader.readAsText(blob);
+                } else {
+                    // Fallback: offer download button
+                    viewerContentEl.innerHTML = `
+                        <div class="text-center p-8">
+                            <p class="text-lg text-gray-700 mb-4">No in-browser preview available for ${fileType}.</p>
+                            <button onclick="downloadBlob('${objectUrl}', '${fileName}')" class="bg-indigo-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-indigo-700 transition">
+                                Download File
+                            </button>
+                        </div>
+                    `;
+                }
+                URL.revokeObjectURL(objectUrl); // Clean up the URL when done.
+
             } catch (error) {
-                console.error("Download Error:", error);
-                showMessage(`Failed to download: ${error.message}`, 'error');
+                console.error("Viewer Error:", error);
+                viewerContentEl.innerHTML = `<p class="text-red-500">Failed to load file: ${error.message}</p>`;
+                showMessage(`Failed to load file: ${error.message}`, 'error');
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
+                viewerLoadingEl.classList.add('hidden');
             }
         };
 
+        const downloadBlob = (objectUrl, fileName) => {
+            const a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // NOTE: Object URL cleanup is handled in renderFileViewer if successful
+        };
+        window.downloadBlob = downloadBlob;
+
         const handleFileDelete = async (fileId) => {
-            // Reverting to window.confirm() since the app is hosted on GitHub Pages (not a restricted iframe)
             if (!window.confirm("Are you sure you want to delete this file and all its chunks? This action is permanent.")) {
                 return;
             }
@@ -582,30 +814,57 @@
                 await deleteDoc(metadataRef);
 
                 showMessage('File and all chunks deleted successfully!', 'success');
-                fetchFiles();
+                // If we deleted the file we are currently viewing, navigate home.
+                const route = getRouteParams();
+                if (route.name === 'fileViewer' && route.fileId === fileId) {
+                    navigate('/');
+                } else {
+                    fetchFiles();
+                }
 
             } catch (error) {
                 console.error("Delete Error:", error);
                 showMessage(`Failed to delete file: ${error.message}`, 'error');
             }
         };
+        window.handleFileDelete = handleFileDelete;
 
         const fetchFiles = async () => {
             if (!currentUserId) return;
 
             try {
                 const metadataCollection = getFileMetadataCollection(currentUserId);
-                // Simple query to fetch all metadata
+                // Fetch all documents that have the current path, OR are in a subpath of the current path
                 const q = query(metadataCollection);
                 const querySnapshot = await getDocs(q);
 
-                const files = querySnapshot.docs.map(doc => ({
+                const allFiles = querySnapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
                 }));
-                renderFiles(files);
+
+                // Client-side filtering to only show files/folders in the current path
+                const filesInCurrentPath = allFiles.filter(file => {
+                    const filePath = file.path || '/'; // Default path to root
+                    
+                    // Match files directly in the current path
+                    if (filePath === currentPath) {
+                        return true;
+                    }
+                    
+                    // Match files in immediate subfolders (for synthetic folders)
+                    if (filePath.startsWith(currentPath) && filePath.length > currentPath.length) {
+                        const remainingPath = filePath.substring(currentPath.length);
+                        // Check if the remaining path contains only one segment (i.e., it's an immediate subfolder)
+                        return remainingPath.indexOf('/') === remainingPath.length - 1;
+                    }
+                    
+                    return false;
+                });
+
+                renderFiles(filesInCurrentPath);
+
             } catch (error) {
-                // CRITICAL: Log the detailed message to help diagnose any future TypeErrors
                 console.error("Fetch Files Error:", error);
                 showMessage(`Could not load files. Error: ${error.message || 'Unknown error'}. Please check console.`, 'error');
             }
@@ -620,21 +879,30 @@
             const signOutButton = document.getElementById('signOutButton');
 
             if (user) {
-                // User is signed in
                 currentUserId = user.uid;
                 authView.classList.add('hidden');
-                fileManagerView.classList.remove('hidden');
                 signOutButton.classList.remove('hidden');
-                // Fetch files as soon as user is authenticated
-                fetchFiles();
+                // Call handleRoute after successful sign-in
+                handleRoute();
             } else {
-                // User is signed out
                 currentUserId = null;
                 authView.classList.remove('hidden');
                 fileManagerView.classList.add('hidden');
+                document.getElementById('fileViewerView').classList.add('hidden');
                 signOutButton.classList.add('hidden');
             }
         });
+        
+        // Ensure initial route is handled on page load
+        if (document.readyState === 'complete') {
+            handleRoute();
+        } else {
+            window.addEventListener('load', handleRoute);
+        }
+
+        // Global exports for inline handlers
+        window.signInWithGoogle = signInWithGoogle;
+        window.handleSignOut = handleSignOut;
 
     </script>
 </body>

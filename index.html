@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vaultio - Secure Base64 Storage</title>
+    <!-- Load Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .vault-card {
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            background-color: white;
+        }
+        .btn-primary {
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Custom scrollbar for file list */
+        .file-list-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .file-list-container::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="bg-indigo-700 text-white shadow-lg p-4 flex justify-between items-center sticky top-0 z-10">
+        <div class="text-2xl font-bold tracking-wider">
+            <svg class="inline-block w-6 h-6 mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
+            Vaultio
+        </div>
+        <button id="signOutButton" class="bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded-lg text-sm font-semibold transition hidden" onclick="handleSignOut()">
+            Sign Out
+        </button>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow p-4 md:p-8">
+
+        <!-- Message/Error Box -->
+        <div id="messageBox" class="hidden fixed top-20 left-1/2 transform -translate-x-1/2 w-full max-w-sm p-3 rounded-xl text-center z-50 transition-opacity duration-300 vault-card" role="alert">
+            <!-- Message content goes here -->
+        </div>
+
+        <!-- Auth View -->
+        <div id="authView" class="flex flex-col items-center justify-center min-h-[70vh]">
+            <div class="vault-card p-8 w-full max-w-md rounded-2xl">
+                <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Welcome to Vaultio</h2>
+
+                <!-- Email/Password Form -->
+                <form id="authForm" class="space-y-4">
+                    <input type="email" id="email" placeholder="Email" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                    <input type="password" id="password" placeholder="Password" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+
+                    <button type="submit" id="authSubmitButton" class="w-full btn-primary bg-indigo-600 text-white p-3 rounded-lg font-semibold hover:bg-indigo-700 flex items-center justify-center">
+                        <span id="authText">Sign In</span>
+                        <div id="authSpinner" class="spinner ml-2 hidden"></div>
+                    </button>
+                </form>
+
+                <div class="text-center mt-4">
+                    <button id="toggleAuthMode" class="text-sm text-indigo-600 hover:text-indigo-800 transition">
+                        Need an account? Sign Up
+                    </button>
+                </div>
+
+                <div class="flex items-center my-6">
+                    <div class="flex-grow border-t border-gray-300"></div>
+                    <span class="flex-shrink mx-4 text-gray-500 text-sm">OR</span>
+                    <div class="flex-grow border-t border-gray-300"></div>
+                </div>
+
+                <!-- Google Sign-In -->
+                <button onclick="signInWithGoogle()" class="w-full btn-primary bg-white border border-gray-300 text-gray-700 p-3 rounded-lg font-semibold hover:bg-gray-50 flex items-center justify-center">
+                    <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google logo" class="w-5 h-5 mr-3"/>
+                    Sign In with Google
+                </button>
+            </div>
+        </div>
+
+        <!-- File Manager View -->
+        <div id="fileManagerView" class="hidden">
+            <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center md:text-left">Your Vault</h1>
+
+            <!-- File Upload Section -->
+            <div class="vault-card p-6 rounded-2xl mb-8">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Upload a New File</h2>
+                <input type="file" id="fileInput" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+
+                <button id="uploadButton" onclick="handleFileUpload()" class="mt-4 btn-primary bg-green-500 text-white p-3 rounded-lg font-semibold hover:bg-green-600 w-full flex items-center justify-center" disabled>
+                    <span id="uploadText">Upload File</span>
+                    <div id="uploadSpinner" class="spinner ml-2 hidden"></div>
+                </button>
+
+                <div id="uploadProgress" class="mt-3 h-2 bg-gray-200 rounded-full hidden">
+                    <div id="progressBar" class="h-2 bg-green-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- File List Section -->
+            <div class="vault-card p-6 rounded-2xl">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Stored Files</h2>
+
+                <div class="file-list-container max-h-96 overflow-y-auto">
+                    <ul id="fileList" class="divide-y divide-gray-200">
+                        <li id="fileListPlaceholder" class="p-4 text-gray-500 text-center">No files in your vault yet.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+        import {
+            getAuth,
+            createUserWithEmailAndPassword,
+            signInWithEmailAndPassword,
+            signInWithPopup,
+            GoogleAuthProvider,
+            onAuthStateChanged,
+            signOut
+        } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+        import {
+            getFirestore,
+            collection,
+            doc,
+            setDoc,
+            addDoc,
+            getDocs,
+            deleteDoc,
+            query,
+            orderBy,
+            serverTimestamp,
+            getDoc
+        } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+
+        // --- Configuration and Initialization ---
+
+        // WARNING: The user has provided this config and will deploy this code.
+        // DO NOT use __app_id, __firebase_config, or __initial_auth_token.
+        const firebaseConfig = {
+            apiKey: "AIzaSyAY_xxThXsNlAf_HGQFXBk1dGa6rtexbYM",
+            authDomain: "vaultio-8bbdb.firebaseapp.com",
+            projectId: "vaultio-8bbdb",
+            storageBucket: "vaultio-8bbdb.firebasestorage.app",
+            messagingSenderId: "685851019361",
+            appId: "1:685851019361:web:4c074c4eea95ac9bef8220",
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- Constants and Global State ---
+
+        // Maximum size for Base64 chunk to stay well under the 1MB Firestore limit (500KB)
+        const CHUNK_SIZE_CHARS = 500 * 1024;
+        let isSignUpMode = false;
+        let currentUserId = null;
+
+        // --- Utility Functions ---
+
+        /**
+         * Displays a temporary, stylish message box.
+         * @param {string} message - The message content.
+         * @param {string} type - 'success', 'error', or 'info'.
+         */
+        const showMessage = (message, type = 'info') => {
+            const box = document.getElementById('messageBox');
+            const colorClass = type === 'error' ? 'bg-red-500 text-white' :
+                                 type === 'success' ? 'bg-green-500 text-white' :
+                                 'bg-blue-500 text-white';
+
+            box.className = `fixed top-20 left-1/2 transform -translate-x-1/2 w-full max-w-sm p-4 rounded-xl text-center z-50 transition-opacity duration-300 vault-card opacity-0 ${colorClass}`;
+            box.textContent = message;
+
+            // Fade in
+            setTimeout(() => {
+                box.classList.remove('opacity-0');
+                box.classList.add('opacity-100');
+            }, 10);
+
+            // Fade out after 3 seconds
+            setTimeout(() => {
+                box.classList.remove('opacity-100');
+                box.classList.add('opacity-0');
+            }, 3000);
+
+            // Hide completely after fade out
+            setTimeout(() => {
+                box.classList.add('hidden');
+            }, 3500);
+        };
+
+        /**
+         * Toggles loading state for buttons.
+         */
+        const toggleLoading = (buttonId, spinnerId, textId, isLoading) => {
+            const button = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            const text = document.getElementById(textId);
+
+            button.disabled = isLoading;
+            if (isLoading) {
+                spinner.classList.remove('hidden');
+                text.classList.add('hidden');
+                button.classList.add('opacity-75');
+            } else {
+                spinner.classList.add('hidden');
+                text.classList.remove('hidden');
+                button.classList.remove('opacity-75');
+            }
+        };
+
+        // --- Authentication Logic ---
+
+        document.getElementById('toggleAuthMode').addEventListener('click', () => {
+            isSignUpMode = !isSignUpMode;
+            document.getElementById('authText').textContent = isSignUpMode ? 'Sign Up' : 'Sign In';
+            document.getElementById('toggleAuthMode').textContent = isSignUpMode ? 'Already have an account? Sign In' : 'Need an account? Sign Up';
+        });
+
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const buttonId = 'authSubmitButton';
+            const spinnerId = 'authSpinner';
+            const textId = 'authText';
+
+            toggleLoading(buttonId, spinnerId, textId, true);
+
+            try {
+                if (isSignUpMode) {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                    showMessage('Account created successfully!', 'success');
+                } else {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    showMessage('Signed in successfully!', 'success');
+                }
+            } catch (error) {
+                console.error("Auth Error:", error);
+                showMessage(error.message.replace('Firebase: ', ''), 'error');
+            } finally {
+                toggleLoading(buttonId, spinnerId, textId, false);
+            }
+        });
+
+        const signInWithGoogle = async () => {
+            const provider = new GoogleAuthProvider();
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Google Auth Error:", error);
+                showMessage(error.message.replace('Firebase: ', ''), 'error');
+            }
+        };
+        window.signInWithGoogle = signInWithGoogle; // Make accessible from inline onclick
+
+        const handleSignOut = async () => {
+            try {
+                await signOut(auth);
+                showMessage('Signed out.', 'info');
+            } catch (error) {
+                console.error("Sign Out Error:", error);
+                showMessage('Could not sign out.', 'error');
+            }
+        };
+        window.handleSignOut = handleSignOut; // Make accessible from inline onclick
+
+
+        // --- Firestore Paths ---
+
+        /** Gets the root collection path for a user's file metadata. */
+        const getFileMetadataCollection = (userId) => {
+            return collection(db, `users/${userId}/files`);
+        };
+
+        /** Gets the sub-collection path for a specific file's chunks. */
+        const getFileChunksCollection = (userId, fileId) => {
+            return collection(db, `users/${userId}/files/${fileId}/chunks`);
+        };
+
+        // --- File I/O Logic (Chunking & Dechunking) ---
+
+        /**
+         * Reads a File object and converts it to a Base64 string.
+         * @param {File} file - The file to read.
+         * @returns {Promise<string>} Base64 data string.
+         */
+        const fileToBase64 = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]); // Only keep the base64 part
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        };
+
+        /**
+         * Saves a Base64 string in chunks to Firestore.
+         * @param {string} base64Data - The full Base64 string.
+         * @param {string} fileName - Name of the file.
+         * @param {string} fileType - MIME type of the file.
+         * @param {number} fileSize - Size of the file in bytes.
+         * @param {function(number)} onProgress - Callback for progress updates.
+         */
+        const saveFileChunks = async (base64Data, fileName, fileType, fileSize, onProgress) => {
+            if (!currentUserId) throw new Error("User not authenticated.");
+
+            const chunks = [];
+            for (let i = 0; i < base64Data.length; i += CHUNK_SIZE_CHARS) {
+                chunks.push(base64Data.substring(i, i + CHUNK_SIZE_CHARS));
+            }
+            const totalChunks = chunks.length;
+            const metadataCollection = getFileMetadataCollection(currentUserId);
+
+            // 1. Create a Metadata Document
+            const metadataRef = doc(metadataCollection);
+            await setDoc(metadataRef, {
+                fileName,
+                fileType,
+                fileSize,
+                totalChunks,
+                uploadedAt: serverTimestamp(),
+            });
+
+            // 2. Save Chunks to Sub-collection
+            const chunksCollection = getFileChunksCollection(currentUserId, metadataRef.id);
+            for (let i = 0; i < totalChunks; i++) {
+                const chunkData = chunks[i];
+                // Firestore document ID for chunk is its index for easy retrieval and ordering
+                await setDoc(doc(chunksCollection, String(i)), {
+                    chunkIndex: i,
+                    data: chunkData
+                });
+                onProgress(((i + 1) / totalChunks) * 100);
+            }
+
+            return metadataRef.id;
+        };
+
+        /**
+         * Loads and reconstructs a file from Firestore chunks.
+         * @param {object} fileMetadata - The file metadata object.
+         */
+        const loadFileChunks = async (fileMetadata) => {
+            if (!currentUserId) throw new Error("User not authenticated.");
+
+            const chunksCollection = getFileChunksCollection(currentUserId, fileMetadata.id);
+            // Query chunks, explicitly ordering by the chunkIndex field
+            const q = query(chunksCollection, orderBy("chunkIndex", "asc"));
+
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                throw new Error("No chunks found for this file.");
+            }
+
+            // Concatenate Base64 strings
+            const allChunks = querySnapshot.docs.map(doc => doc.data().data).join('');
+
+            // Convert Base64 string to a Blob
+            const byteCharacters = atob(allChunks);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: fileMetadata.fileType });
+
+            // Trigger download
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileMetadata.fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        // --- UI Interactions ---
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const uploadButton = document.getElementById('uploadButton');
+            uploadButton.disabled = e.target.files.length === 0;
+        });
+
+        const handleFileUpload = async () => {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                showMessage('Please select a file first.', 'error');
+                return;
+            }
+
+            const buttonId = 'uploadButton';
+            const spinnerId = 'uploadSpinner';
+            const textId = 'uploadText';
+            const progressBarEl = document.getElementById('progressBar');
+            const progressContainer = document.getElementById('uploadProgress');
+
+            toggleLoading(buttonId, spinnerId, textId, true);
+            progressBarEl.style.width = '0%';
+            progressContainer.classList.remove('hidden');
+
+            try {
+                // 1. Read file as Base64
+                const base64Data = await fileToBase64(file);
+
+                // 2. Save in chunks to Firestore
+                await saveFileChunks(
+                    base64Data,
+                    file.name,
+                    file.type || 'application/octet-stream',
+                    file.size,
+                    (progress) => {
+                        progressBarEl.style.width = `${progress}%`;
+                    }
+                );
+
+                showMessage('File uploaded and chunked successfully!', 'success');
+                fileInput.value = null; // Clear input
+                uploadButton.disabled = true;
+
+                // Refresh file list
+                fetchFiles();
+
+            } catch (error) {
+                console.error("Upload Error:", error);
+                showMessage(`Upload failed: ${error.message}`, 'error');
+            } finally {
+                toggleLoading(buttonId, spinnerId, textId, false);
+                setTimeout(() => progressContainer.classList.add('hidden'), 500);
+            }
+        };
+        window.handleFileUpload = handleFileUpload; // Make accessible from inline onclick
+
+        /**
+         * Renders the list of files in the UI.
+         * @param {Array<object>} files - Array of file metadata objects.
+         */
+        const renderFiles = (files) => {
+            const fileListEl = document.getElementById('fileList');
+            fileListEl.innerHTML = '';
+            document.getElementById('fileListPlaceholder').style.display = files.length === 0 ? 'block' : 'none';
+
+            files.sort((a, b) => b.uploadedAt.toDate() - a.uploadedAt.toDate());
+
+            files.forEach(file => {
+                const li = document.createElement('li');
+                li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition rounded-lg';
+                li.innerHTML = `
+                    <div>
+                        <p class="font-semibold text-gray-800 break-words">${file.fileName}</p>
+                        <p class="text-sm text-gray-500">
+                            ${(file.fileSize / 1024 / 1024).toFixed(2)} MB | ${file.totalChunks} Chunks
+                        </p>
+                    </div>
+                    <div class="space-x-2 flex items-center">
+                        <button class="download-btn bg-indigo-500 text-white p-2 rounded-full hover:bg-indigo-600 transition" data-file-id="${file.id}" title="Download File">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        </button>
+                        <button class="delete-btn bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition" data-file-id="${file.id}" title="Delete File">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                `;
+                fileListEl.appendChild(li);
+            });
+
+            document.querySelectorAll('.download-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const fileId = e.currentTarget.getAttribute('data-file-id');
+                    const file = files.find(f => f.id === fileId);
+                    if (file) handleFileDownload(file);
+                });
+            });
+
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const fileId = e.currentTarget.getAttribute('data-file-id');
+                    handleFileDelete(fileId);
+                });
+            });
+        };
+
+        const handleFileDownload = async (fileMetadata) => {
+            const btn = document.querySelector(`[data-file-id="${fileMetadata.id}"].download-btn`);
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<div class="spinner w-5 h-5"></div>`; // Show loading spinner
+
+            try {
+                showMessage(`Downloading "${fileMetadata.fileName}"... Reconstructing ${fileMetadata.totalChunks} chunks.`, 'info');
+                await loadFileChunks(fileMetadata);
+                showMessage(`"${fileMetadata.fileName}" downloaded successfully!`, 'success');
+            } catch (error) {
+                console.error("Download Error:", error);
+                showMessage(`Failed to download: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        };
+
+        const handleFileDelete = async (fileId) => {
+            if (!confirm("Are you sure you want to delete this file and all its chunks?")) return;
+
+            try {
+                // 1. Delete all chunks
+                const chunksCollection = getFileChunksCollection(currentUserId, fileId);
+                const q = query(chunksCollection);
+                const chunkDocs = await getDocs(q);
+
+                for (const docSnapshot of chunkDocs.docs) {
+                    await deleteDoc(docSnapshot.ref);
+                }
+
+                // 2. Delete the metadata document
+                const metadataRef = doc(getFileMetadataCollection(currentUserId), fileId);
+                await deleteDoc(metadataRef);
+
+                showMessage('File and all chunks deleted successfully!', 'success');
+                fetchFiles();
+
+            } catch (error) {
+                console.error("Delete Error:", error);
+                showMessage(`Failed to delete file: ${error.message}`, 'error');
+            }
+        };
+
+        const fetchFiles = async () => {
+            if (!currentUserId) return;
+
+            try {
+                const metadataCollection = getFileMetadataCollection(currentUserId);
+                const q = query(metadataCollection, orderBy('uploadedAt', 'desc'));
+                const querySnapshot = await getDocs(q);
+
+                const files = querySnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                renderFiles(files);
+            } catch (error) {
+                console.error("Fetch Files Error:", error);
+                showMessage('Could not load files.', 'error');
+            }
+        };
+
+
+        // --- Auth State Change Listener ---
+
+        onAuthStateChanged(auth, (user) => {
+            const authView = document.getElementById('authView');
+            const fileManagerView = document.getElementById('fileManagerView');
+            const signOutButton = document.getElementById('signOutButton');
+
+            if (user) {
+                // User is signed in
+                currentUserId = user.uid;
+                authView.classList.add('hidden');
+                fileManagerView.classList.remove('hidden');
+                signOutButton.classList.remove('hidden');
+                fetchFiles();
+            } else {
+                // User is signed out
+                currentUserId = null;
+                authView.classList.remove('hidden');
+                fileManagerView.classList.add('hidden');
+                signOutButton.classList.add('hidden');
+            }
+        });
+
+    </script>
+</body>
+</html>
+
